@@ -9,7 +9,6 @@ type Setting = { configured: boolean; source: string; updatedAt: string|null }
 type Host = { uuid: string; remark: string; isDisabled: boolean; isHidden: boolean }
 type Job = { id: string; remote_id: number|null; location: string; host_uuids: string[]; status: string; progress_done: number; progress_total: number; estimated_cost: number|null; actual_cost: number|null; error?: string|null; created_at: string; results?: Array<{host?:string;pop_name?:string;connected?:boolean;latency_ms?:number|null;error?:string}> }
 type Pop = { id: number; name?: string; city?: string; region?: string; operator?: string }
-type Estimate = { estimated_cost: number; balance: number; affordable:boolean; estimated_max_minutes?:number }
 const regions=[{value:'russia',label:'Россия'},{value:'russia_mobile',label:'Россия — мобильные сети'},{value:'china',label:'Китай'},{value:'iran',label:'Иран'},{value:'turkmenistan',label:'Туркменистан'}]
 const nameFor=(value:string)=>regions.find(r=>r.value===value)?.label??value
 const statusFor=(value:string)=>({prepared:'Ожидает подтверждения',pending:'В очереди',running:'Выполняется',completed:'Завершена',failed:'Ошибка',cancelled:'Отменена'} as Record<string,string>)[value]??value
@@ -18,7 +17,6 @@ export function DpiCheckerPage(){
  const [settings,setSettings]=useState<Setting|null>(null),[balance,setBalance]=useState<number|null>(null),[apiKey,setApiKey]=useState('')
  const [hosts,setHosts]=useState<Host[]>([]),[selected,setSelected]=useState<string[]>([]),[location,setLocation]=useState<string|null>('russia'),[optimal,setOptimal]=useState(true)
  const [pops,setPops]=useState<Pop[]>([]),[popIds,setPopIds]=useState<string[]>([]),[jobs,setJobs]=useState<Job[]>([]),[details,setDetails]=useState<Job|null>(null)
- const [preview,setPreview]=useState<{id:string;estimate:Estimate;keys:number;points:number}|null>(null)
  const [busy,setBusy]=useState(false),[keyBusy,setKeyBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
  const refresh=useCallback(async()=>{
    const [configuration,history]=await Promise.all([instance.get('/api/dpi-checker/settings'),instance.get('/api/dpi-checker/checks')])
@@ -29,10 +27,24 @@ export function DpiCheckerPage(){
  useEffect(()=>{const timer=window.setInterval(()=>void refresh().catch(()=>{}),15000);return()=>window.clearInterval(timer)},[refresh])
  useEffect(()=>{if(optimal||!location)return;let active=true;void instance.get('/api/dpi-checker/pops',{params:{location}}).then(r=>{if(active){const data=r.data.response;setPops(Array.isArray(data)?data:Array.isArray(data?.pops)?data.pops:[]);setPopIds([])}}).catch(e=>{if(active)setError(getError(e))});return()=>{active=false}},[location,optimal])
  const saveKey=async()=>{setKeyBusy(true);setError('');try{await instance.put('/api/dpi-checker/settings',{apiKey});setApiKey('');await refresh();setNotice('API-ключ успешно проверен и сохранён на сервере.')}catch(e){setError(getError(e))}finally{setKeyBusy(false)}}
- const prepare=async()=>{if(!selected.length||!location)return;setBusy(true);setPreview(null);setError('');try{const result=await instance.post('/api/dpi-checker/checks/prepare',{hosts:selected,location,...(!optimal?{pop_ids:popIds.map(Number)}:{})});setPreview(result.data.response)}catch(e){setError(getError(e))}finally{setBusy(false)}}
- const start=async()=>{if(!preview)return;setBusy(true);setError('');try{await instance.post(`/api/dpi-checker/checks/${preview.id}/start`);setNotice('Проверка поставлена в очередь. Прогресс появится в истории.');setPreview(null);await refresh()}catch(e){setError(getError(e))}finally{setBusy(false)}}
+ const runCheck=async()=>{
+   if(!selected.length||!location||busy)return
+   setBusy(true);setError('')
+   let preparedId:string|null=null
+   try{
+     const prepared=await instance.post('/api/dpi-checker/checks/prepare',{hosts:selected,location,...(!optimal?{pop_ids:popIds.map(Number)}:{})})
+     preparedId=prepared.data.response.id as string
+     if(prepared.data.response.estimate?.affordable===false)throw new Error('Недостаточно средств на балансе DPI Checker')
+     await instance.post('/api/dpi-checker/checks/'+preparedId+'/start')
+     setNotice('Проверка запущена. Результаты и стоимость появятся в истории.')
+     await refresh()
+   }catch(e){
+     if(preparedId){try{await instance.delete('/api/dpi-checker/checks/'+preparedId)}catch{/* Queued jobs are cleared by the scheduler. */}}
+     setError(e instanceof Error&&e.message.startsWith('Недостаточно')?e.message:getError(e))
+   }finally{setBusy(false)}
+ }
  const openDetails=async(id:string)=>{setError('');try{const res=await instance.get(`/api/dpi-checker/checks/${id}`);setDetails(res.data.response)}catch(e){setError(getError(e))}}
- const cancel=async(id:string)=>{try{await instance.delete(`/api/dpi-checker/checks/${id}`);setPreview(null);await refresh()}catch(e){setError(getError(e))}}
+ const cancel=async(id:string)=>{try{await instance.delete(`/api/dpi-checker/checks/${id}`);;await refresh()}catch(e){setError(getError(e))}}
  const pct=(j:Job)=>j.progress_total>0?Math.min(100,Math.round(100*j.progress_done/j.progress_total)):(j.status==='completed'?100:0)
  return <Page title="DPI Checker"><Stack gap="lg">
     <Group justify="space-between" align="center"><Group gap="sm"><DpiCheckerLogo width={34} height={34} style={{color:'var(--mantine-color-cyan-5)'}}/><div><Title order={2}>DPI Checker</Title><Text size="sm" c="dimmed">Проверка доступности VLESS-хостов из выбранных регионов</Text></div></Group><Group gap="xs"><Button component="a" href="https://t.me/dpi_checker_robot?start=p453722" target="_blank" rel="noopener noreferrer" variant="light" leftSection={<TbBrandTelegram size={17}/>}>Перейти в бот</Button><Button variant="light" leftSection={<TbRefresh size={16}/>} onClick={()=>void refresh().catch(e=>setError(getError(e)))}>Обновить</Button></Group></Group>
@@ -45,17 +57,15 @@ export function DpiCheckerPage(){
       </Stack></Card>
       <Card withBorder radius="md" padding="lg"><Stack gap="md"><Group gap="xs"><TbCoin size={20}/><Text fw={600}>Баланс DPI Checker</Text></Group><Title order={1} c={balance===null?'dimmed':undefined}>
         {balance===null?'—':<NumberFormatter value={balance} decimalScale={2} fixedDecimalScale thousandSeparator=" " prefix="$"/>}
-      </Title><Text c="dimmed" size="sm">{balance===null?'Не удалось получить баланс. Проверьте ключ и подключение.':'Актуальный баланс аккаунта по данным API /profile'}</Text><Text size="xs" c="dimmed">Проверки платные. Стоимость рассчитывается до запуска и подтверждается отдельно.</Text></Stack></Card>
+      </Title><Text c="dimmed" size="sm">{balance===null?'Не удалось получить баланс. Проверьте ключ и подключение.':'Актуальный баланс аккаунта по данным API /profile'}</Text><Text size="xs" c="dimmed">Проверки платные. Стоимость рассчитывается автоматически при запуске.</Text></Stack></Card>
     </SimpleGrid>
     <Card withBorder radius="md" padding="lg"><Stack gap="md"><Group gap="xs"><TbShieldSearch size={20}/><Title order={4}>Новая проверка</Title></Group>
-      <MultiSelect searchable clearable label="Хосты для проверки" description="Будет создана временная учётная запись с VLESS-ключами выбранных хостов." placeholder="Выберите хосты" data={hosts.filter(h=>!h.isDisabled&&!h.isHidden).map(h=>({value:h.uuid,label:h.remark}))} value={selected} onChange={value=>{setSelected(value);setPreview(null)}} maxValues={20} />
-      <SimpleGrid cols={{base:1,sm:2}}><Select label="Регион" data={regions} value={location} onChange={value=>{setLocation(value);setPreview(null)}} allowDeselect={false}/><Stack justify="center"><Switch label="Оптимальные точки проверки" description="Если выключить, можно выбрать конкретные PoP." checked={optimal} onChange={e=>{setOptimal(e.currentTarget.checked);setPreview(null)}}/></Stack></SimpleGrid>
-      {!optimal&&<MultiSelect label="Точки присутствия (PoP)" searchable data={pops.map(p=>({value:String(p.id),label:[p.name??p.city??p.region??`PoP ${p.id}`,p.operator].filter(Boolean).join(' · ')}))} value={popIds} onChange={v=>{setPopIds(v);setPreview(null)}} placeholder="Выберите точки" />}
-      <Group justify="end"><Button variant="light" onClick={()=>void prepare()} loading={busy} disabled={!settings?.configured||!location||!selected.length||(!optimal&&!popIds.length)}>Рассчитать стоимость</Button></Group>
-      {preview&&<Card withBorder radius="md"><Stack gap="xs"><Group justify="space-between"><Text fw={600}>Подтверждение платной проверки</Text><Badge color={preview.estimate.affordable?'teal':'red'}>{preview.estimate.affordable?'Средств достаточно':'Недостаточно средств'}</Badge></Group>
-        <Text size="sm">{preview.keys} VLESS-ключей · {preview.points} точек · {nameFor(location??'')}</Text><Group><Text size="sm">Ориентировочная стоимость: <b>${Number(preview.estimate.estimated_cost).toFixed(2)}</b></Text><Text size="sm">Баланс: <b>${Number(preview.estimate.balance).toFixed(2)}</b></Text></Group>
-        <Group><Button leftSection={<TbPlayerPlay size={16}/>} loading={busy} disabled={!preview.estimate.affordable} onClick={()=>void start()}>Запустить проверку</Button><Button variant="default" onClick={()=>void cancel(preview.id)}>Отмена</Button></Group>
-      </Stack></Card>}
+      <MultiSelect searchable clearable label="Хосты для проверки" description="Будет создана временная учётная запись с VLESS-ключами выбранных хостов." placeholder="Выберите хосты" data={hosts.filter(h=>!h.isDisabled&&!h.isHidden).map(h=>({value:h.uuid,label:h.remark}))} value={selected} onChange={value=>{setSelected(value);}} maxValues={20} />
+      <SimpleGrid cols={{base:1,sm:2}}><Select label="Регион" data={regions} value={location} onChange={value=>{setLocation(value);}} allowDeselect={false}/><Stack justify="center"><Switch label="Оптимальные точки проверки" description="Если выключить, можно выбрать конкретные PoP." checked={optimal} onChange={e=>{setOptimal(e.currentTarget.checked);}}/></Stack></SimpleGrid>
+      {!optimal&&<MultiSelect label="Точки присутствия (PoP)" searchable data={pops.map(p=>({value:String(p.id),label:[p.name??p.city??p.region??`PoP ${p.id}`,p.operator].filter(Boolean).join(' · ')}))} value={popIds} onChange={v=>{setPopIds(v);}} placeholder="Выберите точки" />}
+      <Group justify="end"><Button leftSection={<TbPlayerPlay size={17}/>} onClick={()=>void runCheck()} loading={busy} disabled={!settings?.configured||!location||!selected.length||(!optimal&&!popIds.length)}>Запустить проверку</Button></Group>
+      <Text size="xs" c="dimmed">Проверка платная: расчёт стоимости выполняется автоматически перед запуском без отдельного подтверждения. Итоговая сумма доступна в истории.</Text>
+    </Stack></Card>}
     </Stack></Card>
     <Card withBorder radius="md" padding="lg"><Group justify="space-between" mb="md"><Title order={4}>Последние проверки</Title><Text size="sm" c="dimmed">Автообновление каждые 15 секунд</Text></Group><Table.ScrollContainer minWidth={700}><Table highlightOnHover verticalSpacing="sm"><Table.Thead><Table.Tr><Table.Th>Дата</Table.Th><Table.Th>Регион</Table.Th><Table.Th>Хосты</Table.Th><Table.Th>Статус / прогресс</Table.Th><Table.Th>Стоимость</Table.Th><Table.Th>Результаты</Table.Th></Table.Tr></Table.Thead><Table.Tbody>
     {jobs.map(j=><Table.Tr key={j.id}><Table.Td><Text size="sm">{new Date(j.created_at).toLocaleString('ru-RU')}</Text></Table.Td><Table.Td>{nameFor(j.location)}</Table.Td><Table.Td>{j.host_uuids.length}</Table.Td><Table.Td><Stack gap={5}><Badge color={j.status==='completed'?'teal':j.status==='failed'?'red':'blue'} variant="light">{statusFor(j.status)}</Badge><Progress value={pct(j)} color={j.status==='failed'?'red':'cyan'} size="sm"/><Text c="dimmed" size="xs">{j.progress_done} / {j.progress_total}</Text></Stack></Table.Td><Table.Td>${Number(j.actual_cost??j.estimated_cost??0).toFixed(2)}</Table.Td><Table.Td><Group gap="xs"><Button variant="subtle" size="compact-sm" onClick={()=>void openDetails(j.id)}>Подробнее</Button>{['prepared','pending'].includes(j.status)&&<Button variant="subtle" color="red" size="compact-sm" onClick={()=>void cancel(j.id)}>Отменить</Button>}</Group></Table.Td></Table.Tr>)}
