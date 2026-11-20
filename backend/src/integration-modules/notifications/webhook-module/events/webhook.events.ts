@@ -241,6 +241,14 @@ export class WebhookEvents {
                 timestamp: dayjs().toISOString(),
                 data: instanceToPlain({
                     ...event.data,
+                    // Always include a device field, even when attribution is unknown.
+                    // IP matching is only probabilistic (shared NAT/proxy IPs exist).
+                    device: event.data.report.device ?? null,
+                    deviceIdentification: event.data.report.deviceIdentification ?? {
+                        status: 'unknown',
+                        method: 'ip',
+                        candidateCount: 0,
+                    },
                     node: new NodeResponseModel(
                         event.data.node,
                         await this.getNodesSystemInfo(event.data.node.uuid),
