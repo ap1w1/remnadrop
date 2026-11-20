@@ -76,11 +76,19 @@ export function SquadQuotas({userUuid}:{userUuid:string}){
         if(!window.confirm('Сбросить расход на всех нодах подписки? Действие нельзя отменить.'))return
         void act(()=>instance.post(url+'/reset-all'),'Счётчики всех нод сброшены')
     }
+    const resetOne=(q:Quota)=>{
+        if(!window.confirm('Сбросить расход только на этой ноде? Общая дата следующего сброса подписки не изменится.'))return
+        void act(()=>instance.post(url+'/'+q.node_uuid+'/reset'),'Расход на выбранной ноде сброшен')
+    }
+    const removeOne=(q:Quota)=>{
+        if(!window.confirm('Удалить индивидуальный лимит выбранной ноды? У неё будет безлимитный доступ по обычным правилам подписки.'))return
+        void act(()=>instance.delete(url+'/'+q.node_uuid),'Индивидуальный лимит удалён; доступ синхронизируется с нодой')
+    }
     const current=quotas.find(q=>q.node_uuid===selected)
     return <Card withBorder radius="lg" p="lg"><Stack gap="md">
         <div><Text fw={700} size="lg">Лимиты по нодам</Text><Text size="sm" c="dimmed">Ограничения относятся к пользователю во всех сквадах. Превышение лимита блокирует доступ только к соответствующей ноде.</Text></div>
-        {legacy.length>0&&<Alert color="yellow" title="Наследованные лимиты">Лимиты старых сквадов требуют ручной проверки: {legacy.join(', ')}. Старые значения не удалены.</Alert>}
-        {policy.mode==='legacy'&&<Alert color="blue" title="Режим совместимости">Существующие лимиты не изменены. Чтобы использовать общий сброс и предупреждение, сохраните настройки подписки ниже.</Alert>}
+        {legacy.length>0&&<Text c="yellow" size="xs">Есть старые лимиты сквадов для проверки: {legacy.join(', ')}. Значения сохранены.</Text>}
+        {policy.mode==='legacy'&&<Text c="dimmed" size="xs">Режим совместимости: старые лимиты не изменены. Общие настройки включатся после сохранения.</Text>}
         {pendingSync&&<Alert color="yellow" title="Синхронизация в очереди">Панель применит изменения к нодам при следующем проходе планировщика. Возможна небольшая задержка.</Alert>}
         {error&&<Alert color="red" withCloseButton onClose={()=>setError('')}>{error}</Alert>}
         {success&&<Alert color="teal" withCloseButton onClose={()=>setSuccess('')}>{success}</Alert>}
@@ -105,12 +113,18 @@ export function SquadQuotas({userUuid}:{userUuid:string}){
             <Select label="Единицы" w={110} data={[{value:'gib',label:'ГиБ'},{value:'mib',label:'МиБ'},{value:'b',label:'Байты'}]} value={unit} onChange={v=>setUnit(v??'gib')} allowDeselect={false}/>
         </Group>
         <Group justify="flex-end"><Button size="sm" disabled={!selected||busy||policy.mode!=='shared'||(limit!==''&&!/^\d+(\.\d{1,3})?$/.test(limit))} loading={busy} onClick={saveNode}>Сохранить лимит ноды</Button></Group>
-        <Table.ScrollContainer minWidth={550}><Table highlightOnHover>
+        <Table.ScrollContainer minWidth={620}><Table highlightOnHover>
             <Table.Thead><Table.Tr><Table.Th>Нода</Table.Th><Table.Th>Расход / лимит</Table.Th><Table.Th>Доступ</Table.Th></Table.Tr></Table.Thead>
             <Table.Tbody>{quotas.map(q=><Table.Tr key={q.node_uuid}>
                 <Table.Td><Text size="sm">{nodes.find(n=>n.value===q.node_uuid)?.label??q.node_uuid}</Text></Table.Td>
                 <Table.Td><Text size="xs">{bytesLabel(q.used_bytes)} / {bytesLabel(q.limit_bytes)}</Text><Progress value={percent(q)} color={q.blocked?'red':'cyan'} size="xs" mt={5}/></Table.Td>
-                <Table.Td><Badge color={q.blocked?'red':'teal'} variant="light">{q.blocked?'Заблокировано':'Доступно'}</Badge></Table.Td>
+                <Table.Td><Stack gap={5} align="flex-start">
+                    <Badge color={q.blocked?'red':'teal'} variant="light">{q.blocked?'Заблокировано':'Доступно'}</Badge>
+                    <Group gap={4} wrap="nowrap">
+                        <Button variant="subtle" size="compact-xs" disabled={busy} onClick={()=>resetOne(q)}>Сбросить</Button>
+                        <Button variant="subtle" color="red" size="compact-xs" disabled={busy} onClick={()=>removeOne(q)}>Удалить лимит</Button>
+                    </Group>
+                </Stack></Table.Td>
             </Table.Tr>)}{!quotas.length&&<Table.Tr><Table.Td colSpan={3}><Text ta="center" c="dimmed" py="md">Лимиты ещё не заданы</Text></Table.Td></Table.Tr>}</Table.Tbody>
         </Table></Table.ScrollContainer>
     </Stack></Card>
