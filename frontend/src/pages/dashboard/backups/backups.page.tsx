@@ -1,6 +1,6 @@
 import { Alert, Badge, Button, Card, Divider, Group, Modal, NumberInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Title, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useState } from 'react'
-import { TbTrash, TbArchive, TbCloud, TbDatabase, TbDeviceFloppy, TbPlayerPlay, TbPlus, TbRefresh, TbSettings, TbWebhook } from 'react-icons/tb'
+import { TbTrash, TbArchive, TbCloud, TbDatabase, TbDeviceFloppy, TbPlayerPlay, TbPlus, TbRefresh, TbSettings } from 'react-icons/tb'
 import { instance } from '@shared/api/axios'
 import { Page } from '@shared/ui'
 import { HelpActionIconShared } from '@shared/ui/help-drawer'
