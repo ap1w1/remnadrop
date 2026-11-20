@@ -145,7 +145,7 @@ export function NodeHistory() {
             </Button>
         </Group>
 
-        <Collapse in={calendarOpen}>
+        <Collapse expanded={calendarOpen}>
             <Card withBorder radius="md" padding="sm">
                 <Stack gap="xs">
                     <SimpleGrid cols={{base:1,sm:2}} spacing="xs">
