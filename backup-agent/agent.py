@@ -136,6 +136,43 @@ def remove_archive(t: dict, record: dict):
     db_sql(f"UPDATE backup_runs SET deleted_at=now() WHERE id={sql_lit(record['id'])}::uuid AND deleted_at IS NULL;")
 
 
+def process_requested_deletions():
+    """Process UI requests on the VPS; never delete the last good copy."""
+    result = db_sql("""SELECT COALESCE(json_agg(item)::text,'[]') FROM (
+        SELECT json_build_object(
+          'id',t.id,'runId',r.id,'provider',t.provider,
+          'remoteName',t.remote_name,'remotePath',t.remote_path,
+          'fileName',r.file_name
+        ) item
+        FROM backup_runs r JOIN backup_targets t ON t.id=r.target_id
+        WHERE r.delete_requested_at IS NOT NULL
+          AND r.deleted_at IS NULL AND r.status='completed'
+        ORDER BY r.delete_requested_at LIMIT 20
+    ) pending;""")
+    for item in json.loads(result or '[]'):
+        archive_id = item['runId']
+        try:
+            check_target(item)
+            history = records(item['id'])
+            # The last *successful non-deleted* dump must always survive.
+            if not history or history[-1]['id'] == archive_id:
+                raise RuntimeError('Last verified archive is protected from deletion')
+            record = next((x for x in history if x['id'] == archive_id), None)
+            if record is None:
+                raise RuntimeError('Archive is no longer present in active history')
+            remove_archive(item, record)
+            db_sql(f"UPDATE backup_runs SET delete_requested_at=NULL,delete_error=NULL "
+                   f"WHERE id={sql_lit(archive_id)}::uuid;")
+            LOG.info('Archive deletion completed for %s', archive_id)
+        except Exception as exc:
+            message = str(exc)[:700]
+            LOG.exception('Archive deletion failed: %s', archive_id)
+            # A permanently protected last archive should not be retried every minute.
+            clear = 'delete_requested_at=NULL,' if 'protected' in message else ''
+            db_sql(f"UPDATE backup_runs SET {clear}delete_error={sql_lit(message)} "
+                   f"WHERE id={sql_lit(archive_id)}::uuid;")
+
+
 def purge(t: dict, incoming: int):
     history = records(t['id'])
     max_size = int(t['maxBytes'])
@@ -276,6 +313,7 @@ def main():
             return
         try:
             db_sql("UPDATE backup_agent_status SET last_seen=now(),last_error=NULL WHERE singleton=1;")
+            process_requested_deletions()
             for t in claim_due():
                 run_one(t)
             db_sql("UPDATE backup_agent_status SET last_seen=now() WHERE singleton=1;")
