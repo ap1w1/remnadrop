@@ -75,7 +75,7 @@ export class SquadQuotasService {
                 SELECT node_uuid,used_bytes,limit_bytes,blocked FROM user_node_quotas
                 WHERE user_uuid=${userUuid}::uuid FOR UPDATE`;
             await tx.$executeRaw`
-                UPDATE user_node_quotas SET used_bytes=0,blocked=false,threshold_sent=false,
+                UPDATE user_node_quotas SET used_bytes=0,blocked=(limit_bytes=0),threshold_sent=false,
                     reset_at=CASE WHEN ${policy.length>0}::boolean THEN NULL
                         ELSE CASE WHEN period_days IS NULL THEN NULL ELSE now()+period_days*interval '1 day' END END,
                     updated_at=now()
