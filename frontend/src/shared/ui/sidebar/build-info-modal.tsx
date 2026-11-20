@@ -1,241 +1,87 @@
-import {
-    ActionIcon,
-    Badge,
-    Box,
-    Button,
-    CopyButton,
-    Divider,
-    Group,
-    Paper,
-    SimpleGrid,
-    Stack,
-    Text,
-    Tooltip
-} from '@mantine/core'
+import { Alert, Badge, Button, Card, Code, CopyButton, Divider, Group, Loader, Stack, Text, Tooltip } from '@mantine/core'
 import { GetMetadataCommand } from '@remnawave/backend-contract'
-import {
-    TbBrandGithub,
-    TbBrandTelegram,
-    TbCalendar,
-    TbCheck,
-    TbCopy,
-    TbGitBranch,
-    TbHash,
-    TbServer,
-    TbWorld
-} from 'react-icons/tb'
+import { useCallback, useEffect, useState } from 'react'
+import { TbBrandGithub, TbCheck, TbCopy, TbExternalLink, TbRefresh, TbShieldCheck, TbTerminal2 } from 'react-icons/tb'
 
-import { formatTimeUtil } from '@shared/utils/time-utils'
-
-import { CopyableCodeBlock } from '../copyable-code-block'
-import { Logo } from '../logo'
-import classes from './build-info-modal.module.css'
+type Release={
+    tag_name:string
+    name:string
+    body:string|null
+    published_at:string|null
+    html_url:string
+}
+const repo='https://github.com/ap1w1/remnadrop'
+const endpoint='https://api.github.com/repos/ap1w1/remnadrop/releases/latest'
+const command='sudo remnadrop update'
 
 interface BuildInfoModalProps {
-    isNewVersionAvailable: boolean
-    remnawaveMetadata: GetMetadataCommand.Response['response']
+    remnawaveMetadata:GetMetadataCommand.Response['response']
+    isNewVersionAvailable?:boolean
 }
 
-export function BuildInfoModal({ remnawaveMetadata, isNewVersionAvailable }: BuildInfoModalProps) {
-    return (
-        <Stack gap="md">
-            {isNewVersionAvailable && (
-                <Paper className={classes.updateCard} p="md" radius="md">
-                    <Group align="center" gap="md" wrap="wrap">
-                        <Group gap="sm" wrap="nowrap">
-                            <Box className={classes.updateIconBox}>
-                                <Logo color="var(--mantine-color-teal-4)" size={24} />
-                            </Box>
-                            <Stack className={classes.updateTextWrapper} gap={4}>
-                                <Text c="teal.4" fw={600} size="sm">
-                                    Update available
-                                </Text>
-                                <Text c="dimmed" size="xs">
-                                    A new version is available
-                                </Text>
-                            </Stack>
-                        </Group>
-
-                        <Button
-                            color="teal"
-                            component="a"
-                            href="https://t.me/remnalog"
-                            leftSection={<TbBrandTelegram size={14} />}
-                            ml="auto"
-                            radius="md"
-                            size="xs"
-                            target="_blank"
-                            variant="light"
-                        >
-                            Check out
-                        </Button>
-                    </Group>
-                </Paper>
-            )}
-
-            <Paper className={classes.mainCard} p="md">
-                <Stack gap="md">
-                    <Group justify="space-between">
-                        <Group gap="sm">
-                            <Badge
-                                color="cyan"
-                                leftSection={<Logo size={16} />}
-                                size="lg"
-                                variant="light"
-                            >
-                                {remnawaveMetadata.version}
-                            </Badge>
-
-                            <Badge
-                                color={
-                                    remnawaveMetadata.git.backend.branch === 'dev' ? 'red' : 'teal'
-                                }
-                                leftSection={<TbGitBranch size={16} />}
-                                size="lg"
-                                variant="light"
-                            >
-                                {remnawaveMetadata.git.backend.branch}
-                            </Badge>
-                        </Group>
-                        <CopyButton
-                            timeout={2000}
-                            value={JSON.stringify(remnawaveMetadata, null, 2)}
-                        >
-                            {({ copied, copy }) => (
-                                <Tooltip label="Copy build info">
-                                    <ActionIcon
-                                        color={copied ? 'teal' : 'gray'}
-                                        onClick={copy}
-                                        size="md"
-                                        variant="subtle"
-                                    >
-                                        {copied ? <TbCheck size={14} /> : <TbCopy size={14} />}
-                                    </ActionIcon>
-                                </Tooltip>
-                            )}
-                        </CopyButton>
-                    </Group>
-
-                    <Divider className={classes.divider} />
-
-                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                        <Paper className={classes.buildTimeCard} p="sm" radius="md">
-                            <Group gap="xs" mb={6}>
-                                <TbCalendar color="var(--mantine-color-indigo-5)" size={14} />
-                                <Text c="indigo.5" fw={600} size="xs" tt="uppercase">
-                                    Build Time
-                                </Text>
-                            </Group>
-                            <Text c="gray.3" ff="monospace" size="xs">
-                                {formatTimeUtil({
-                                    time: remnawaveMetadata.build.time,
-                                    template: 'NUMERIC_DATETIME'
-                                })}
-                            </Text>
-                        </Paper>
-
-                        <Paper className={classes.buildNumberCard} p="sm" radius="md">
-                            <Group gap="xs" mb={6}>
-                                <TbHash color="var(--mantine-color-violet-5)" size={14} />
-                                <Text c="violet.5" fw={600} size="xs" tt="uppercase">
-                                    Build
-                                </Text>
-                            </Group>
-                            <Text c="gray.3" ff="monospace" size="xs">
-                                {remnawaveMetadata.build.number}
-                            </Text>
-                        </Paper>
-                    </SimpleGrid>
-                </Stack>
-            </Paper>
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                <Paper className={classes.backendCard} p="md" radius="md">
-                    <Stack gap="sm">
-                        <Group gap="xs" justify="space-between">
-                            <Group gap="xs">
-                                <TbServer color="var(--mantine-color-teal-5)" size={16} />
-                                <Text c="teal.5" fw={600} size="sm">
-                                    Backend
-                                </Text>
-                            </Group>
-                            <Tooltip label="View on GitHub">
-                                <ActionIcon
-                                    color="teal"
-                                    component="a"
-                                    href={remnawaveMetadata.git.backend.commitUrl}
-                                    size="sm"
-                                    target="_blank"
-                                    variant="subtle"
-                                >
-                                    <TbBrandGithub size={14} />
-                                </ActionIcon>
-                            </Tooltip>
-                        </Group>
-
-                        <CopyableCodeBlock
-                            size="small"
-                            value={remnawaveMetadata.git.backend.commitSha}
-                        />
-                    </Stack>
-                </Paper>
-
-                <Paper className={classes.frontendCard} p="md" radius="md">
-                    <Stack gap="sm">
-                        <Group gap="xs" justify="space-between">
-                            <Group gap="xs">
-                                <TbWorld color="var(--mantine-color-cyan-5)" size={16} />
-                                <Text c="cyan.5" fw={600} size="sm">
-                                    Frontend
-                                </Text>
-                            </Group>
-                            <Tooltip label="View on GitHub">
-                                <ActionIcon
-                                    color="cyan"
-                                    component="a"
-                                    href={remnawaveMetadata.git.frontend.commitUrl}
-                                    size="sm"
-                                    target="_blank"
-                                    variant="subtle"
-                                >
-                                    <TbBrandGithub size={14} />
-                                </ActionIcon>
-                            </Tooltip>
-                        </Group>
-
-                        <CopyableCodeBlock
-                            size="small"
-                            value={remnawaveMetadata.git.frontend.commitSha}
-                        />
-                    </Stack>
-                </Paper>
-            </SimpleGrid>
-
-            <Group gap="sm" grow>
-                <Button
-                    color="cyan"
-                    component="a"
-                    href="https://t.me/remnawave"
-                    leftSection={<TbBrandTelegram size={16} />}
-                    radius="md"
-                    size="sm"
-                    target="_blank"
-                    variant="light"
-                >
-                    Community
-                </Button>
-                <Button
-                    component="a"
-                    href="https://github.com/remnawave"
-                    leftSection={<TbBrandGithub size={16} />}
-                    radius="md"
-                    size="sm"
-                    target="_blank"
-                    variant="default"
-                >
-                    GitHub
-                </Button>
+/** Public GitHub Releases feed. Private repos intentionally do not expose credentials in browser. */
+export function BuildInfoModal({remnawaveMetadata}:BuildInfoModalProps){
+    const [release,setRelease]=useState<Release|null>(null)
+    const [loading,setLoading]=useState(true)
+    const [error,setError]=useState('')
+    const refresh=useCallback(async(signal?:AbortSignal)=>{
+        setLoading(true);setError('')
+        try{
+            const response=await fetch(endpoint,{
+                headers:{Accept:'application/vnd.github+json'},signal
+            })
+            if(!response.ok){
+                if(response.status===404){
+                    throw new Error('Публичных релизов пока нет. Пока репозиторий закрыт, GitHub не показывает его обновления без авторизации.')
+                }
+                throw new Error('GitHub вернул HTTP '+response.status+'. Проверьте подключение и попробуйте снова.')
+            }
+            const data=await response.json() as Release
+            if(!data.tag_name||!data.html_url)throw new Error('Некорректный ответ GitHub Releases')
+            setRelease(data)
+        }catch(e){
+            if(signal?.aborted)return
+            setRelease(null)
+            setError(e instanceof Error?e.message:'Не удалось проверить обновления')
+        }finally{if(!signal?.aborted)setLoading(false)}
+    },[])
+    useEffect(()=>{
+        const controller=new AbortController()
+        void refresh(controller.signal)
+        return ()=>controller.abort()
+    },[refresh])
+    return <Stack gap="md">
+        <Group justify="space-between" align="center" wrap="wrap">
+            <div><Text fw={700} size="lg">Обновления RemnaDrop</Text><Text size="xs" c="dimmed">Информация из GitHub Releases</Text></div>
+            <Button size="xs" variant="light" leftSection={<TbRefresh size={16}/>} loading={loading} onClick={()=>void refresh()}>Проверить</Button>
+        </Group>
+        <Card withBorder p="sm" radius="md">
+            <Group justify="space-between" align="center"><div><Text size="xs" c="dimmed">Установленная база</Text><Text fw={700}>Remnawave {remnawaveMetadata.version} · Fork RemnaDrop</Text></div><Badge variant="light" color="teal">Локальная панель</Badge></Group>
+            <Text c="dimmed" size="xs" mt="xs">Это версия базовой Remnawave, а не номер коммита форка. Пока сборка не передаёт Git SHA в метаданные, автоматическое сравнение установленных и доступных версий недостоверно.</Text>
+        </Card>
+        {loading&&<Group gap="xs"><Loader size="xs"/><Text size="sm">Проверяем релизы...</Text></Group>}
+        {!loading&&error&&<Alert color="yellow" title="Проверка обновлений недоступна">{error}</Alert>}
+        {!loading&&release&&<Card withBorder p="md" radius="md"><Stack gap="xs">
+            <Group justify="space-between"><Text fw={700}>Последний релиз</Text><Badge color="cyan">{release.tag_name}</Badge></Group>
+            <Text fw={600}>{release.name||release.tag_name}</Text>
+            {release.published_at&&<Text size="xs" c="dimmed">Опубликовано: {new Date(release.published_at).toLocaleString('ru-RU')}</Text>}
+            <Divider/>
+            <Text size="sm" style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{(release.body||'Описание обновления пока не опубликовано').slice(0,2000)}</Text>
+            <Button component="a" href={release.html_url} target="_blank" rel="noopener noreferrer" size="sm" variant="light" leftSection={<TbExternalLink size={16}/>}>Посмотреть релиз</Button>
+        </Stack></Card>}
+        <Card withBorder p="md" radius="md"><Stack gap="sm">
+            <Group gap="xs"><TbShieldCheck size={18} color="var(--mantine-color-teal-5)"/><Text fw={700}>Обновление с резервной копией</Text></Group>
+            <Text size="sm">Для безопасного обновления запустите команду на VPS. Установщик собирает образ, делает резервную копию PostgreSQL и конфигурации, проверяет восстановление БД и только затем применяет миграции.</Text>
+            <Group justify="space-between" gap="xs" align="center" wrap="wrap">
+                <Code fz="sm">{command}</Code>
+                <CopyButton value={command}>
+                    {({copied,copy})=><Tooltip label={copied?'Скопировано':'Скопировать команду'}>
+                        <Button size="sm" variant="light" leftSection={copied?<TbCheck size={16}/>:<TbCopy size={16}/>} onClick={copy}>{copied?'Скопировано':'Скопировать'}</Button>
+                    </Tooltip>}
+                </CopyButton>
             </Group>
-        </Stack>
-    )
+            <Alert color="orange" icon={<TbTerminal2 size={18}/>}>Автоматический запуск обновления из браузера пока не включён: для него нужен отдельный защищённый агент на VPS. Кнопка копирует команду, но не изменяет работающую панель.</Alert>
+        </Stack></Card>
+        <Button component="a" href={repo} target="_blank" rel="noopener noreferrer" leftSection={<TbBrandGithub size={18}/>} variant="default" fullWidth>Открыть RemnaDrop на GitHub</Button>
+    </Stack>
 }
