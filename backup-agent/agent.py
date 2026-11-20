@@ -89,7 +89,7 @@ def records(target_id: str) -> list[dict]:
         raise ValueError('Invalid UUID')
     s = db_sql('''SELECT COALESCE(json_agg(json_build_object(
        'id',id,'fileName',file_name,'sizeBytes',size_bytes::text,'startedAt',started_at,
-       'status',status) ORDER BY started_at)::text,'[]')
+       'status',status) ORDER BY started_at,id)::text,'[]')
        FROM backup_runs WHERE target_id = %s::uuid
          AND status='completed' AND deleted_at IS NULL AND file_name IS NOT NULL;''' % sql_lit(target_id))
     return json.loads(s or '[]')
