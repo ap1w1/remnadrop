@@ -31,7 +31,7 @@ export class BackupsService {
     for (const key of ['autoDelete','webhookEnabled','enabled']) if (b[key] !== undefined && typeof b[key] !== 'boolean') throw new BadRequestException(`Invalid ${key}`);
   }
   async list() {
-    const targets = await this.db.$queryRaw`SELECT id,name,provider,remote_name AS "remoteName",remote_path AS "remotePath",interval_minutes AS "intervalMinutes",retention_days AS "retentionDays",max_bytes::text AS "maxBytes",auto_delete AS "autoDelete",webhook_enabled AS "webhookEnabled",enabled,next_run_at AS "nextRunAt",last_run_at AS "lastRunAt",last_status AS "lastStatus",last_usage_bytes::text AS "lastUsageBytes",last_usage_at AS "lastUsageAt",created_at AS "createdAt" FROM backup_targets ORDER BY created_at DESC`;
+    const targets = await this.db.$queryRaw`SELECT id,name,provider,remote_name AS "remoteName",remote_path AS "remotePath",interval_minutes AS "intervalMinutes",retention_days AS "retentionDays",max_bytes::text AS "maxBytes",auto_delete AS "autoDelete",webhook_enabled AS "webhookEnabled",enabled,next_run_at AS "nextRunAt",last_run_at AS "lastRunAt",last_status AS "lastStatus",last_usage_bytes::text AS "lastUsageBytes",last_usage_at AS "lastUsageAt",created_at AS "createdAt" FROM backup_targets WHERE archived_at IS NULL ORDER BY created_at DESC`;
     const runs = await this.db.$queryRaw`SELECT id,target_id AS "targetId",status,file_name AS "fileName",size_bytes::text AS "sizeBytes",sha256,started_at AS "startedAt",finished_at AS "finishedAt",error,deleted_at AS "deletedAt" FROM backup_runs ORDER BY started_at DESC LIMIT 150`;
     const agentRows = await this.db.$queryRaw<{lastSeen:Date|null;lastError:string|null}[]>`SELECT last_seen AS "lastSeen",last_error AS "lastError" FROM backup_agent_status WHERE singleton=1`;
     const agent = agentRows[0] ?? {lastSeen:null,lastError:null};
@@ -62,11 +62,15 @@ export class BackupsService {
     if(!rows.length)throw new NotFoundException('Backup storage not found');
     return {response:{queued:true,note:'Агент заберёт задание при следующем опросе (обычно до минуты).'}};
   }
+  /** Archive a destination without deleting its actual PostgreSQL dumps.
+   * A backup destination can contain the only surviving copy of a database. */
   async remove(id:string) {
     this.checkId(id);
-    const rows=await this.db.$queryRaw<{id:string}[]>`UPDATE backup_targets SET enabled=false,updated_at=now() WHERE id=${id}::uuid RETURNING id`;
+    const rows=await this.db.$queryRaw<{id:string}[]>`UPDATE backup_targets
+      SET enabled=false,archived_at=now(),updated_at=now()
+      WHERE id=${id}::uuid AND archived_at IS NULL RETURNING id`;
     if(!rows.length)throw new NotFoundException('Backup storage not found');
-    return {response:{disabled:true,note:'Существующие архивы не удалены.'}};
+    return {response:{deleted:true,filesPreserved:true,note:'Хранилище удалено из списка. Архивы на диске и в облаке сохранены.'}};
   }
   private checkId(id:string){if(!validUUID.test(id))throw new BadRequestException('Invalid UUID');}
 }
