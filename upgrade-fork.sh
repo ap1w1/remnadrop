@@ -79,6 +79,21 @@ test -s "$DB_BACKUP" || fail 'Database dump is empty'
 docker exec -i remnawave-db pg_restore --list < "$DB_BACKUP" > "$BACKUP_DIR/database-pre-upgrade.list" || fail 'Cannot read database dump'
 say 'Database dump verified structurally. The migration script also performs test restoration.'
 
+# The rollback export uses disk twice: once for rootfs.tar and once for the
+# docker-imported recovery image. Check AFTER Docker build and the pre-upgrade
+# DB dump, but BEFORE creating either artifact or stopping the panel.
+say 'Checking free space for export, recovery image and PostgreSQL restore...'
+ROOTFS_BYTES="$(docker inspect --size -f '{{.SizeRootFs}}' remnawave)"
+DB_BYTES="$(docker exec remnawave-db sh -ec 'psql -X -A -t -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT pg_database_size(current_database())"')"
+FREE_KIB="$(df -Pk "$INSTALL_DIR" | awk 'NR==2 {print $4}')"
+[[ "$ROOTFS_BYTES" =~ ^[0-9]+$ && "$DB_BYTES" =~ ^[0-9]+$ && "$FREE_KIB" =~ ^[0-9]+$ ]] || fail 'Unable to estimate free space; refusing rollback export.'
+# 2x container size (tar + imported image), 2x DB size for test restore,
+# plus 1.5 GiB of WAL, Docker and OS headroom; conservative by design.
+REQUIRED_KIB=$(((2 * ROOTFS_BYTES + 2 * DB_BYTES + 1610612736 + 1023) / 1024))
+if (( FREE_KIB < REQUIRED_KIB )); then
+  fail "Not enough free space after build: ${FREE_KIB} KiB; need >= ${REQUIRED_KIB} KiB for safe rollback export and PostgreSQL restore. The current panel remains online. Remove unused images or expand disk."
+fi
+say "Disk reserve OK: ${FREE_KIB} KiB free; estimated requirement ${REQUIRED_KIB} KiB"
 say 'Exporting current container for reliable rollback...'
 docker inspect remnawave > "$BACKUP_DIR/container.json"
 docker export remnawave -o "$BACKUP_DIR/rootfs.tar"
