@@ -79,19 +79,38 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
       pops=raw.map((p:number|{id:number})=>typeof p==='number'?p:p?.id);
     }
     if(!pops.length || pops.length>100 || pops.some(p=>!Number.isInteger(p)||p<=0))throw new BadRequestException('No valid measurement points available');
-    const squads=await this.db.internalSquadInbounds.findMany({where:{inboundUuid:{in:hosts.map(h=>h.configProfileInboundUuid!)}}});
-    const assigned=[...new Set(squads.map(s=>s.internalSquadUuid))];
-    if(!assigned.length)throw new BadRequestException('Selected hosts must be accessible through an internal squad');
-    const created=await this.users.createUser({username:`dpi_${randomUUID().replace(/-/g,'').slice(0,20)}`,status:'ACTIVE',expireAt:new Date(Date.now()+45*60000),trafficLimitBytes:1073741824,activeInternalSquads:assigned,description:'Temporary DPI Checker test account'} as CreateUserRequestDto);
-    if(!created.isOk)throw new ServiceUnavailableException('Unable to create temporary test account');
+    // Each DPI check gets its own short-lived squad containing exactly the
+    // selected inbound IDs. It does not depend on the admin having manually
+    // exposed those inbounds through an existing squad.
+    const id=randomUUID();
+    const inboundUuids=[...new Set(hosts.map(h=>h.configProfileInboundUuid!))];
+    const squad=await this.db.internalSquads.create({
+      data:{
+        name:'__dpi_'+id,
+        internalSquadInbounds:{create:inboundUuids.map(inboundUuid=>({inbound:{connect:{uuid:inboundUuid}}}))},
+      },
+      select:{uuid:true}
+    });
+    let temporaryUserUuid:string|null=null;
     try{
-      const id=randomUUID();
-      const job={id,user_uuid:created.response.uuid,host_uuids:selected,location:input.location,pop_ids:pops,status:'prepared',remote_id:null,estimated_cost:null,created_at:new Date()};
+      const created=await this.users.createUser({
+        username:`dpi_${id.replace(/-/g,'').slice(0,20)}`,
+        status:'ACTIVE',expireAt:new Date(Date.now()+45*60000),
+        trafficLimitBytes:1073741824,activeInternalSquads:[squad.uuid],
+        description:'Temporary DPI Checker test account'
+      } as CreateUserRequestDto);
+      if(!created.isOk)throw new ServiceUnavailableException('Unable to create temporary test account');
+      temporaryUserUuid=created.response.uuid;
+      const job={id,user_uuid:temporaryUserUuid,host_uuids:selected,location:input.location,pop_ids:pops,status:'prepared',remote_id:null,estimated_cost:null,created_at:new Date()};
       const keys=await this.keys(job);
       const estimate=await this.api('/checks/estimate',{method:'POST',body:JSON.stringify({check_type:'vpn',location:input.location,pop_ids:pops,keys})});
-      await this.db.$executeRaw`INSERT INTO dpi_check_jobs(id,user_uuid,host_uuids,location,pop_ids,status,estimated_cost,progress_total) VALUES (${id}::uuid,${job.user_uuid}::uuid,${selected}::uuid[],${input.location},${pops}::int[],'prepared',${Number(estimate.estimated_cost ?? 0)},${pops.length*keys.length})`;
+      await this.db.$executeRaw`INSERT INTO dpi_check_jobs(id,user_uuid,host_uuids,location,pop_ids,status,estimated_cost,progress_total) VALUES (${id}::uuid,${temporaryUserUuid}::uuid,${selected}::uuid[],${input.location},${pops}::int[],'prepared',${Number(estimate.estimated_cost ?? 0)},${pops.length*keys.length})`;
       return {response:{id,hosts:selected.length,keys:keys.length,points:pops.length,estimate}};
-    }catch(error){await this.users.deleteUser(created.response.uuid);throw error;}
+    }catch(error){
+      if(temporaryUserUuid)await this.users.deleteUser(temporaryUserUuid);
+      await this.db.internalSquads.deleteMany({where:{uuid:squad.uuid}});
+      throw error;
+    }
   }
   async start(id:string,maxUsd?:number){
     const job=await this.job(id);
@@ -121,7 +140,15 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     await this.db.$executeRaw`UPDATE dpi_check_jobs SET status='cancelled',updated_at=now() WHERE id=${id}::uuid`;await this.cleanup(job);
     return {response:{success:true}};
   }
-  private async cleanup(job:Job){if(job.user_uuid){const result=await this.users.deleteUser(job.user_uuid);if(result.isOk)await this.db.$executeRaw`UPDATE dpi_check_jobs SET user_uuid=NULL WHERE id=${job.id}::uuid`;}}
+  private async cleanup(job:Job){
+    if(!job.user_uuid)return;
+    const result=await this.users.deleteUser(job.user_uuid);
+    if(!result.isOk)throw new Error('Temporary DPI user cleanup failed');
+    // Only the squad created for this job is deleted; existing customer squads
+    // are never changed or removed.
+    await this.db.internalSquads.deleteMany({where:{name:'__dpi_'+job.id}});
+    await this.db.$executeRaw`UPDATE dpi_check_jobs SET user_uuid=NULL WHERE id=${job.id}::uuid`;
+  }
   async tick(){if(this.busy)return;this.busy=true;try{
     const jobs=await this.db.$queryRaw<Job[]>`SELECT * FROM dpi_check_jobs WHERE (remote_id IS NOT NULL AND status IN ('pending','running')) OR (user_uuid IS NOT NULL AND created_at<now()-interval '45 minutes') ORDER BY created_at LIMIT 30`;
     for(const job of jobs){try{if(job.remote_id&&['pending','running'].includes(job.status)){const status=await this.refresh(job.id,job.remote_id);if(['completed','failed','cancelled'].includes(status))await this.cleanup(job);}if(job.user_uuid&&Date.now()-new Date(job.created_at).getTime()>45*60000){await this.cleanup(job);await this.db.$executeRaw`UPDATE dpi_check_jobs SET status='failed',error='Temporary account expired' WHERE id=${job.id}::uuid AND status IN ('prepared','pending','running')`;}}
