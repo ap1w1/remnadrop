@@ -13,6 +13,7 @@ import { queryClient } from '@shared/api'
 import { useGetConfigProfiles, useGetHosts, useGetNodes } from '@shared/api/hooks'
 import { Page } from '@shared/ui'
 import { nodeOptionLabel } from '@shared/utils/misc/node-option-label'
+import { TopologyCanvas, type GraphVertex, type GraphEdge } from './topology-canvas'
 
 /** Read-only topology. All links are derived from existing Remnawave API relationships. */
 export function NodeTopologyPage() {
@@ -25,6 +26,7 @@ export function NodeTopologyPage() {
     const [selectedNode, setSelectedNode] = useState<string | null>(null)
     const [hostQuery, setHostQuery] = useState('')
     const [showDisabled, setShowDisabled] = useState(false)
+    const [detailsOpen,setDetailsOpen]=useState(false)
     const [expandedInbounds, setExpandedInbounds] = useState<string[]>([])
 
     const node = nodes.find(item => item.uuid === selectedNode) ?? nodes[0]
@@ -41,6 +43,31 @@ export function NodeTopologyPage() {
         !host.inbound.configProfileInboundUuid ||
         !inbounds.some(inbound => inbound.uuid === host.inbound.configProfileInboundUuid)
     ).filter(hostVisible)
+    const topology = useMemo(()=>{
+        const vertices:GraphVertex[] = [], edges:GraphEdge[] = []
+        if(!node) return {vertices,edges,hasMore:false}
+        const nodeId='node:'+node.uuid
+        vertices.push({id:nodeId,kind:'node',label:nodeOptionLabel(node),detail:node.address+':'+(node.port??''),disabled:node.isDisabled})
+        if(!profile) return {vertices,edges,hasMore:false}
+        const profileId='profile:'+profile.uuid
+        vertices.push({id:profileId,kind:'profile',label:profile.name,detail:'Активный профиль'})
+        edges.push({from:nodeId,to:profileId})
+        for(const inbound of inbounds.slice(0,50)){
+            const id='inbound:'+inbound.uuid
+            vertices.push({id,kind:'inbound',label:inbound.tag,detail:inbound.type+(inbound.port?' :'+inbound.port:'')})
+            edges.push({from:profileId,to:id})
+        }
+        const visibleHosts=relevantHosts.filter(host=>(showDisabled||(!host.isDisabled&&!host.isHidden))&&
+          (host.remark+' '+host.address+' '+host.port).toLowerCase().includes(hostQuery.trim().toLowerCase()))
+        for(const host of visibleHosts.slice(0,100)){
+            const from='inbound:'+host.inbound.configProfileInboundUuid
+            if(!vertices.some(item=>item.id===from))continue
+            const id='host:'+host.uuid
+            vertices.push({id,kind:'host',label:host.remark,detail:host.address+':'+host.port,disabled:host.isDisabled})
+            edges.push({from,to:id})
+        }
+        return {vertices,edges,hasMore:inbounds.length>50||visibleHosts.length>100}
+    },[node,profile,inbounds,relevantHosts,showDisabled,hostQuery])
     const loading = nodesQuery.isLoading || profilesQuery.isLoading || hostsQuery.isLoading
     const failed = nodesQuery.isError || profilesQuery.isError || hostsQuery.isError
 
@@ -80,7 +107,10 @@ export function NodeTopologyPage() {
             <SimpleGrid cols={{base:1,md:2}} spacing="md">
                 <div>{nodeCard}</div><div>{profileCard}</div>
             </SimpleGrid>
-            <Card withBorder radius="md" p="lg">
+            <TopologyCanvas vertices={topology.vertices} edges={topology.edges}/>
+            {topology.hasMore&&<Alert color="yellow" title="Слишком много элементов">Для производительности холст показывает до 50 inbound и 100 хостов. Используйте поиск или выбор другой ноды.</Alert>}
+            <Group justify="end"><Button size="xs" variant="subtle" onClick={()=>setDetailsOpen(v=>!v)}>{detailsOpen?'Скрыть':'Показать'} подробный список inbound и хостов</Button></Group>
+            {detailsOpen&&<Card withBorder radius="md" p="lg">
                 <Stack gap="md">
                     <Group justify="space-between" wrap="wrap"><Group gap="xs"><TbPlugConnected size={21}/><Title order={4}>Inbound и хосты</Title></Group><Group gap="xs"><Badge variant="light">{inbounds.length} inbound</Badge><Badge variant="light">{relevantHosts.length} хостов</Badge></Group></Group>
                     <Text size="xs" c="dimmed">Связи строятся из назначения inbound на ноде и привязки хостов к ноде и inbound. Раскрывайте элементы, чтобы увидеть соответствующие хосты.</Text>
@@ -103,8 +133,8 @@ export function NodeTopologyPage() {
                     {unmappedHosts.length > 0 && <Alert color="orange" title="Хосты без активного inbound">{unmappedHosts.length} хостов привязаны к ноде, но их inbound отсутствует среди активных для неё. Это может быть ошибкой конфигурации.</Alert>}
                     <Group justify="flex-end"><Button variant="light" size="xs" component={Link} to="/dashboard/management/hosts">Открыть список хостов</Button></Group>
                 </Stack>
-            </Card>
+            </Card>}
         </>}
-        <Text c="dimmed" size="xs">Это интерактивная схема существующих связей, не редактор конфигурации. Изменения выполняются в разделах «Ноды», «Профили» и «Хосты».</Text>
+        <Text c="dimmed" size="xs">Связи отображаются в интерактивном холсте по существующей конфигурации. Карточки можно двигать, но это не меняет настройки. Изменения выполняются в разделах «Ноды», «Профили» и «Хосты».</Text>
     </Stack></Page>
 }
