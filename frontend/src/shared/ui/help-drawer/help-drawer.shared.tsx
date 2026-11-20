@@ -13,6 +13,8 @@ import { BaseOverlayHeader } from '../overlays/base-overlay-header'
 import classes from './help-drawer.module.css'
 import { THelpDrawerAvailableScreen } from './help-drawer.types'
 
+const REMNADROP_BACKUP_HELP = "# Бэкапы RemnaDrop\n\n## Что сохраняется\nАрхив содержит базу PostgreSQL: пользователей и настройки панели. Конфигурация Docker, .env и TLS-ключи в архив не входят. Сохраните их отдельно.\n\n## 1. Включите копирование на VPS\nНа сервере форка установите службу:\n\n~~~bash\nsudo bash /opt/remnadrop-git/backup-agent/install-agent.sh\nsystemctl status remnadrop-backups.timer\n~~~\n\nСлужба проверяет расписания и создаёт дампы. Панели не передаются права Docker.\n\n## 2. Выберите хранилище\n**Локальное** работает без дополнительных подключений. Для **S3, SFTP или Google Drive** сначала подключите rclone на сервере:\n\n~~~bash\nsudo apt-get install -y rclone\nsudo install -d -m 700 /etc/remnadrop-backups\nsudo rclone --config /etc/remnadrop-backups/rclone.conf config\nsudo chmod 600 /etc/remnadrop-backups/rclone.conf\n~~~\n\nВ панели укажите только имя готового подключения (remote). Пароли туда не вводятся.\n\n## 3. Запустите первую копию\nСоздайте хранилище, выберите расписание (например, раз в сутки), срок хранения 7–30 дней, нажмите «Создать сейчас» и убедитесь, что в истории появилась запись.\n\n## Удаление и безопасность\nУдаление хранилища отключает расписание и скрывает его из списка, но **не удаляет архивы физически**. Перед восстановлением проверьте дамп через pg_restore --list и пробное восстановление в отдельную базу.\n\n## Полное восстановление панели\nКроме дампа PostgreSQL вам нужны сохранённые конфигурация Docker и секреты .env. Не восстанавливайте архив поверх рабочей базы без проверенной копии и плана отката."
+
 const SUPPORTED_LANGUAGES = new Set(['en', 'fa', 'ru', 'zh'])
 
 const resolveDocsUrl = (screen: THelpDrawerAvailableScreen, language: string) => {
@@ -34,6 +36,14 @@ export const HelpDrawerShared = memo(() => {
 
     useEffect(() => {
         if (!isOpen || !internalState) {
+            return
+        }
+
+        setError(null)
+        if (internalState.screen === 'PAGE_BACKUPS') {
+            setContent(REMNADROP_BACKUP_HELP)
+            setLoading(false)
+            setShowContent(true)
             return
         }
 
