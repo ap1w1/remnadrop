@@ -54,11 +54,26 @@ EXTRA_CHECK=()
 docker run --rm --network none --entrypoint node \
   -v "$SOURCE/backend/scripts:/checks:ro" -v "$BACKUP:/backup:ro" "$IMAGE" \
   /checks/migration-preflight.mjs /backup/history.json 2.8.1 "${EXTRA_CHECK[@]}"
+# Last-chance free space check AFTER image build/export and BEFORE service stop.
+DB_BYTES="$(docker exec remnawave-db sh -ec 'psql -X -A -t -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT pg_database_size(current_database())"')"
+FREE_KIB="$(df -Pk "$INSTALL_DIR" | awk 'NR==2 {print $4}')"
+[[ "$DB_BYTES" =~ ^[0-9]+$ && "$FREE_KIB" =~ ^[0-9]+$ ]] || { echo 'Cannot calculate DB/disk sizes; keeping panel online.'; exit 1; }
+REQUIRED_KIB=$(((DB_BYTES * 2 + 1073741824 + 1023) / 1024))
+if (( FREE_KIB < REQUIRED_KIB )); then
+  echo "Need ${REQUIRED_KIB} KiB free for safe test restore; only ${FREE_KIB} KiB available. Panel remains online."
+  exit 1
+fi
 echo 'Stopping panel writes and taking a database backup...'
 dc stop remnawave
+SCHEMA_MAY_HAVE_CHANGED=0
 recover() {
   echo "Migration failed. Database/config backup: $BACKUP"
-  echo 'Original panel is stopped. Do not restart it after schema changes without reviewing rollback.'
+  if [[ "$SCHEMA_MAY_HAVE_CHANGED" == 0 ]]; then
+    echo 'Migrations not started: attempting to restart the original stopped container.'
+    docker start remnawave || echo 'WARNING: original panel did not start'
+  else
+    echo 'Migrations may have started: do NOT restart old panel without reviewing DB rollback.'
+  fi
 }
 trap recover ERR
 docker exec remnawave-db sh -ec 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$BACKUP/database.dump"
@@ -99,6 +114,7 @@ PY
 NEW="$BASE:$INSTALL_DIR/compose.fork-auto.json"
 newdc() { COMPOSE_FILE="$NEW" docker compose --project-directory "$INSTALL_DIR" "$@"; }
 newdc config --quiet
+SCHEMA_MAY_HAVE_CHANGED=1
 newdc run --rm --no-deps --entrypoint npm remnawave run migrate:deploy
 newdc up -d --no-deps remnawave
 for attempt in $(seq 1 60); do
