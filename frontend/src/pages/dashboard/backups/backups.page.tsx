@@ -49,18 +49,38 @@ export function BackupsPage(){
     {notice&&<Alert color="teal" title="Результат" withCloseButton onClose={()=>setNotice('')}>{notice}</Alert>}
     <SimpleGrid cols={{base:1,sm:3}}><Card withBorder radius="md"><Group gap="xs"><TbDatabase/><Text size="sm" c="dimmed">Хранилищ</Text></Group><Title order={2}>{targets.length}</Title></Card><Card withBorder radius="md"><Group gap="xs"><TbDeviceFloppy/><Text size="sm" c="dimmed">Хранилища с успешным запуском</Text></Group><Title order={2}>{healthy}</Title></Card><Card withBorder radius="md"><Group gap="xs"><TbCloud/><Text size="sm" c="dimmed">Создано копий</Text></Group><Title order={2}>{runs.filter(r=>r.status==='completed'&&!r.deletedAt).length}</Title></Card></SimpleGrid>
     <Alert color={agent.online?"teal":"yellow"} title={agent.online?"Агент резервного копирования работает":"Агент не подключён"}>{agent.online?`Последняя связь: ${when(agent.lastSeen)}`:`Чтобы включить расписание, установите агент один раз на VPS. Инструкция — в «Справочной статье». ${agent.lastError??""}`}</Alert>
-    {!targets.length?<Card withBorder padding="xl" radius="md"><Stack align="center" gap="xs"><TbArchive size={44}/><Title order={4}>Хранилища пока не добавлены</Title><Text c="dimmed">Добавьте локальный диск или удалённый rclone-провайдер, затем задайте расписание.</Text><Button onClick={()=>begin()}>Создать хранилище</Button></Stack></Card>:<SimpleGrid cols={{base:1,sm:2,lg:3}} spacing="sm">{targets.map(t=>{const last=latest(t.id);return <Card key={t.id} withBorder padding="sm" radius="md"><Stack gap="sm"><Group justify="space-between" align="flex-start"><Group gap="sm"><TbDatabase size={23}/><div><Text fw={700}>{t.name}</Text><Text size="xs" c="dimmed">{providerLabel[t.provider]} · {t.provider==='local'?'Диск VPS':t.remoteName+':'+t.remotePath}</Text></div></Group><Badge variant="light" color={t.enabled?'teal':'gray'}>{t.enabled?'Активно':'Пауза'}</Badge></Group><Divider/><SimpleGrid cols={2} spacing="sm"><div><Text size="xs" c="dimmed">Периодичность</Text><Text size="sm">{intervalLabels.find(i=>i.value===String(t.intervalMinutes))?.label??`Каждые ${t.intervalMinutes} мин`}</Text></div><div><Text size="xs" c="dimmed">Следующий запуск</Text><Text size="sm">{t.enabled?when(t.nextRunAt):'Приостановлено'}</Text></div><div><Text size="xs" c="dimmed">Срок хранения</Text><Text size="sm">{t.retentionDays} дней</Text></div><div><Text size="xs" c="dimmed">Максимальный объём</Text><Text size="sm">{size(t.maxBytes)}</Text></div></SimpleGrid><Stack gap={4}>
-              <Group justify="space-between"><Text size="xs" fw={600}>Заполненность хранилища</Text><Text size="xs" c="dimmed">{t.lastUsageBytes!==null?`${size(t.lastUsageBytes)} / ${size(t.maxBytes)}`:'Нет замера'}</Text></Group>
-              <Progress value={percent(t.lastUsageBytes,t.maxBytes)} size="md" color={percent(t.lastUsageBytes,t.maxBytes)>=90?'red':percent(t.lastUsageBytes,t.maxBytes)>=75?'yellow':'teal'} radius="xl" />
-              <Text size="xs" c="dimmed">{t.lastUsageAt?`Объём проверен: ${when(t.lastUsageAt)}`:'Данные появятся после запуска резервного копирования'}</Text>
-            </Stack><Group gap="xs"><Badge color={statusColor(t.lastStatus)} variant="light">{statusName(t.lastStatus)}</Badge><Badge color={t.autoDelete?'teal':'gray'} variant="outline">{t.autoDelete?'Автоочистка':'Без автоочистки'}</Badge><Tooltip label="Уведомления требуют настроенного BACKUP_WEBHOOK_URL у агента"><Badge color={t.webhookEnabled?'blue':'gray'} variant="outline" leftSection={<TbWebhook size={12}/>}>{t.webhookEnabled?'Вебхук включён':'Вебхук выключен'}</Badge></Tooltip></Group>{last&&<Text size="xs" c="dimmed">Последний запуск: {when(last.startedAt)} · {last.status==='failed'?'Ошибка: '+(last.error??'неизвестно'):size(last.sizeBytes)}</Text>}<Group justify="space-between" mt="xs" gap="xs" wrap="wrap">
-              <Button size="xs" variant="light" leftSection={<TbPlayerPlay size={14}/>} onClick={()=>void run(t)}>Создать</Button>
+    {!targets.length?<Card withBorder padding="xl" radius="md"><Stack align="center" gap="xs"><TbArchive size={44}/><Title order={4}>Хранилища пока не добавлены</Title><Text c="dimmed">Добавьте локальный диск или удалённый rclone-провайдер, затем задайте расписание.</Text><Button onClick={()=>begin()}>Создать хранилище</Button></Stack></Card>:<SimpleGrid cols={{base:1,sm:2,lg:3}} spacing="sm">{targets.map(t=>{
+        const last=latest(t.id)
+        const filled=percent(t.lastUsageBytes,t.maxBytes)
+        return <Card key={t.id} withBorder padding="sm" radius="md">
+          <Stack gap={8}>
+            <Group justify="space-between" align="flex-start" gap="xs" wrap="nowrap">
+              <Stack gap={1} style={{minWidth:0}}>
+                <Text fw={700} size="sm" truncate>{t.name}</Text>
+                <Text size="xs" c="dimmed" truncate>{providerLabel[t.provider]} · {t.provider==='local'?'Диск VPS':t.remoteName+':'+t.remotePath}</Text>
+              </Stack>
+              <Badge size="xs" color={!t.enabled?'gray':statusColor(t.lastStatus)} variant="light">{!t.enabled?'Пауза':statusName(t.lastStatus)}</Badge>
+            </Group>
+            <Text c="dimmed" size="xs">{intervalLabels.find(i=>i.value===String(t.intervalMinutes))?.label??'Каждые '+t.intervalMinutes+' мин'} · Хранить {t.retentionDays} дн</Text>
+            <Group justify="space-between" gap="xs">
+              <Text size="xs">Объём {size(t.lastUsageBytes)} / {size(t.maxBytes)}</Text>
+              <Text size="xs" c="dimmed">{t.autoDelete?'Автоочистка':'Без автоочистки'}{t.webhookEnabled?' · Вебхук':''}</Text>
+            </Group>
+            <Progress value={filled} size="xs" color={filled>=90?'red':filled>=75?'yellow':'teal'} />
+            <Tooltip multiline label={last?.status==='failed'?last.error??'Ошибка': 'Следующий запуск: '+when(t.nextRunAt)}>
+              <Text c="dimmed" size="xs" truncate>{last?'Последний: '+when(last.startedAt):'Резервные копии ещё не создавались'}</Text>
+            </Tooltip>
+            <Group justify="space-between" gap="xs" wrap="wrap">
+              <Button size="compact-xs" variant="light" leftSection={<TbPlayerPlay size={13}/>} onClick={()=>void run(t)}>Создать</Button>
               <Group gap={4}>
                 <Tooltip label="Настроить"><Button size="compact-xs" variant="subtle" aria-label={'Настроить '+t.name} onClick={()=>begin(t)}><TbSettings size={16}/></Button></Tooltip>
-                <Button size="xs" variant="subtle" color={t.enabled?'gray':'teal'} onClick={()=>void toggle(t)}>{t.enabled?'Пауза':'Включить'}</Button>
-                <Tooltip label="Удалить хранилище (архивы сохранятся)"><Button size="compact-xs" variant="subtle" color="red" aria-label={'Удалить хранилище '+t.name} onClick={()=>void remove(t)}><TbTrash size={16}/></Button></Tooltip>
+                <Button size="compact-xs" variant="subtle" onClick={()=>void toggle(t)}>{t.enabled?'Пауза':'Включить'}</Button>
+                <Tooltip label="Удалить назначение, сохранив архивы"><Button size="compact-xs" variant="subtle" color="red" aria-label={'Удалить '+t.name} onClick={()=>void remove(t)}><TbTrash size={16}/></Button></Tooltip>
               </Group>
-            </Group></Stack></Card>})}</SimpleGrid>}
+            </Group>
+          </Stack>
+        </Card>
+      })}</SimpleGrid>}
     <Card withBorder radius="md" padding="lg"><Group justify="space-between" mb="md"><Title order={4}>История резервного копирования</Title><Badge variant="light">Последние 150</Badge></Group><Table.ScrollContainer minWidth={760}><Table highlightOnHover><Table.Thead><Table.Tr><Table.Th>Дата</Table.Th><Table.Th>Хранилище</Table.Th><Table.Th>Статус</Table.Th><Table.Th>Размер</Table.Th><Table.Th>Архив</Table.Th><Table.Th>Действия</Table.Th></Table.Tr></Table.Thead><Table.Tbody>{runs.map(r=><Table.Tr key={r.id}><Table.Td>{when(r.startedAt)}</Table.Td><Table.Td>{targets.find(t=>t.id===r.targetId)?.name??'Удалённое хранилище'}</Table.Td><Table.Td><Tooltip label={r.error??''} disabled={!r.error}><Badge color={statusColor(r.status)}>{r.deletedAt?'Удалён':statusName(r.status)}</Badge></Tooltip></Table.Td><Table.Td>{size(r.sizeBytes)}</Table.Td><Table.Td><Text ff="monospace" size="xs">{r.fileName??'—'}</Text>{r.deleteError&&<Text size="xs" c="red">{r.deleteError}</Text>}</Table.Td>
     <Table.Td>
       {r.status==='completed'&&!r.deletedAt&&<Tooltip label={latest(r.targetId)?.id===r.id?'Последний успешный архив защищён':r.deleteRequestedAt?'Ожидает удаления агентом':'Удалить физический архив'}>
