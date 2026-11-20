@@ -161,7 +161,7 @@ export class SquadQuotasService {
     }
 
     async reset(userUuid: string, nodeUuid: string, onlyIfDue = false) {
-        if((await this.getPolicy(userUuid)).mode==='shared') return this.resetAll(userUuid,onlyIfDue);
+        // A manual reset of one node must not reset other nodes or shift the common schedule.
         return this.db.$transaction(async tx => {
             const user = await tx.users.findUnique({ where: { uuid: userUuid } });
             if (!user) throw new NotFoundException();
@@ -175,6 +175,24 @@ export class SquadQuotasService {
             await this.reconcile(tx, userUuid, nodeUuid, user.tId);
             await tx.$executeRaw`INSERT INTO node_quota_events(user_uuid,node_uuid,event,used_bytes,limit_bytes) SELECT user_uuid,node_uuid,'LOCATION_TRAFFIC_RESET',used_bytes,limit_bytes FROM user_node_quotas WHERE user_uuid=${userUuid}::uuid AND node_uuid=${nodeUuid}::uuid`;
             return { success: true };
+        });
+    }
+
+    /** Delete only this user's explicit node cap. Usage history remains untouched. */
+    async remove(userUuid:string,nodeUuid:string) {
+        return this.db.$transaction(async tx=>{
+            const user=await tx.users.findUnique({where:{uuid:userUuid}});
+            if(!user)throw new NotFoundException('User not found');
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${user.tId})`;
+            const removed=await tx.$queryRaw<{node_uuid:string;used_bytes:bigint}[]>`
+                DELETE FROM user_node_quotas WHERE user_uuid=${userUuid}::uuid AND node_uuid=${nodeUuid}::uuid
+                RETURNING node_uuid,used_bytes`;
+            if(!removed.length)throw new NotFoundException('Node limit not found');
+            // The user must immediately regain ordinary access to this node.
+            await tx.$executeRaw`
+                INSERT INTO quota_sync(user_uuid) VALUES (${userUuid}::uuid)
+                ON CONFLICT(user_uuid) DO UPDATE SET revision=quota_sync.revision+1,updated_at=now()`;
+            return {success:true,removed:true,accessSyncQueued:true};
         });
     }
 
