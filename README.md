@@ -60,3 +60,23 @@ matching older images. Switching images alone does not undo migrations.
 
 `docker compose -f compose.dev.yml down` preserves the development database.
 Do not add `--volumes` unless intentionally discarding it.
+
+## VPS management command
+
+After importing the fork (main branch), install the CLI on the panel VPS:
+
+```bash
+cd /opt/remnadrop-git
+git pull --ff-only origin main
+sudo install -m 755 scripts/remnadrop-cli.sh /usr/local/bin/remnadrop
+sudo remnadrop status
+sudo remnadrop check
+# For an approved production deployment, after staging tests:
+sudo remnadrop update
+```
+
+- `status` reports current revision and panel health.
+- `check` runs local upgrade preflight without downloading new revisions or restarting the panel.
+- `update` pulls the latest private `main` with `--ff-only`, exports a pinned Git snapshot, builds a new Docker image, checks new frontend/migration files, exports the current container for rollback, backs up and test-restores PostgreSQL, runs reviewed migrations, then checks health and installs the backup timer.
+- The current production database is not automatically rolled back on errors. For production, rehearse on an isolated test system and retain the printed backup locations. Do not run an old image against a new schema without a verified rollback plan.
+- The CLI assumes the previously installed RemnaDrop layout with `/opt/remnawave`, `remnawave`, `remnawave-db`, and `remnawave-redis`. A clean GitHub import by itself does not install or upgrade the running service.
