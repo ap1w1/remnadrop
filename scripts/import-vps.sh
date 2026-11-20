@@ -44,8 +44,8 @@ git -C "$TARGET" pull --ff-only origin main
 
 rsync -a --delete \
   --exclude='/.git/' --exclude='/.gitignore' --exclude='/.github/' --exclude='/scripts/' \
-  --exclude='**/.env' --exclude='**/.env.*' \
   --include='**/.env.sample' --include='**/.env.example' \
+  --exclude='**/.env' --exclude='**/.env.*' \
   --exclude='**/node_modules/' --exclude='**/dist/' --exclude='**/build/' \
   --exclude='**/.cache/' --exclude='**/secrets/' --exclude='**/credentials/' \
   --exclude='**/*.pem' --exclude='**/*.key' --exclude='**/*.p12' --exclude='**/*.pfx' \
