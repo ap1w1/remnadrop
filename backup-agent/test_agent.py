@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 from pathlib import Path
 from unittest import TestCase, mock, main
@@ -35,6 +36,31 @@ class BackupAgentTests(TestCase):
         with mock.patch.object(agent,'records',return_value=history),mock.patch.object(agent,'usage_bytes',return_value=100),mock.patch.object(agent,'remove_archive') as remove:
             with self.assertRaisesRegex(RuntimeError,'quota exceeded'): agent.purge(t,40)
             remove.assert_not_called()
+    def test_last_backup_cannot_be_deleted_from_ui_queue(self):
+        t=target()
+        item=dict(t,fileName='remnadrop-20261120T111111-fba5f8d2.dump')
+        history=[{'id':t['runId'],'fileName':item['fileName']}]
+        with mock.patch.object(agent,'db_sql',side_effect=[json.dumps([item]),'']) as db, \
+             mock.patch.object(agent,'records',return_value=history), \
+             mock.patch.object(agent,'remove_archive') as remove:
+            agent.process_requested_deletions()
+            remove.assert_not_called()
+            self.assertIn('delete_requested_at=NULL',db.call_args_list[-1][0][0])
+
+    def test_old_backup_deletion_request_is_processed(self):
+        t=target()
+        item=dict(t,fileName='remnadrop-20261120T111111-fba5f8d2.dump')
+        history=[
+            {'id':t['runId'],'fileName':item['fileName']},
+            {'id':'1bd9e101-9916-498f-9647-62bd64c0cbe9','fileName':'remnadrop-20261120T121212-62bd64c0.dump'},
+        ]
+        with mock.patch.object(agent,'db_sql',side_effect=[json.dumps([item]),'']) as db, \
+             mock.patch.object(agent,'records',return_value=history), \
+             mock.patch.object(agent,'remove_archive') as remove:
+            agent.process_requested_deletions()
+            remove.assert_called_once_with(item,history[0])
+            self.assertIn('delete_requested_at=NULL',db.call_args_list[-1][0][0])
+
     def test_archive_size_must_fit_cap(self):
         with mock.patch.object(agent,'records',return_value=[]),mock.patch.object(agent,'usage_bytes',return_value=0):
             with self.assertRaisesRegex(RuntimeError,'exceeds'): agent.purge(target(),111)
