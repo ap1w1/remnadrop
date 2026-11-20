@@ -32,7 +32,7 @@ export class BackupsService {
   }
   async list() {
     const targets = await this.db.$queryRaw`SELECT id,name,provider,remote_name AS "remoteName",remote_path AS "remotePath",interval_minutes AS "intervalMinutes",retention_days AS "retentionDays",max_bytes::text AS "maxBytes",auto_delete AS "autoDelete",webhook_enabled AS "webhookEnabled",enabled,next_run_at AS "nextRunAt",last_run_at AS "lastRunAt",last_status AS "lastStatus",last_usage_bytes::text AS "lastUsageBytes",last_usage_at AS "lastUsageAt",created_at AS "createdAt" FROM backup_targets WHERE archived_at IS NULL ORDER BY created_at DESC`;
-    const runs = await this.db.$queryRaw`SELECT id,target_id AS "targetId",status,file_name AS "fileName",size_bytes::text AS "sizeBytes",sha256,started_at AS "startedAt",finished_at AS "finishedAt",error,deleted_at AS "deletedAt" FROM backup_runs ORDER BY started_at DESC LIMIT 150`;
+    const runs = await this.db.$queryRaw`SELECT id,target_id AS "targetId",status,file_name AS "fileName",size_bytes::text AS "sizeBytes",sha256,started_at AS "startedAt",finished_at AS "finishedAt",error,deleted_at AS "deletedAt",delete_requested_at AS "deleteRequestedAt",delete_error AS "deleteError" FROM backup_runs ORDER BY started_at DESC LIMIT 150`;
     const agentRows = await this.db.$queryRaw<{lastSeen:Date|null;lastError:string|null}[]>`SELECT last_seen AS "lastSeen",last_error AS "lastError" FROM backup_agent_status WHERE singleton=1`;
     const agent = agentRows[0] ?? {lastSeen:null,lastError:null};
     return {response:{targets,runs,agent:{...agent,online:!!agent.lastSeen && Date.now()-new Date(agent.lastSeen).getTime()<180000}}};
@@ -72,5 +72,33 @@ export class BackupsService {
     if(!rows.length)throw new NotFoundException('Backup storage not found');
     return {response:{deleted:true,filesPreserved:true,note:'Хранилище удалено из списка. Архивы на диске и в облаке сохранены.'}};
   }
+  /** Queue deletion for the host-side agent; never remove the last verified copy. */
+  async requestArchiveDeletion(id:string) {
+    this.checkId(id);
+    const exists=await this.db.$queryRaw<{id:string;status:string;deleted_at:Date|null}[]>`
+      SELECT id,status,deleted_at FROM backup_runs WHERE id=${id}::uuid`;
+    if(!exists.length)throw new NotFoundException('Backup not found');
+    if(exists[0].status!=='completed'||exists[0].deleted_at)
+      throw new BadRequestException('Only an existing completed backup can be deleted');
+    const updated=await this.db.$queryRaw<{id:string}[]>`
+      WITH requested AS (
+        SELECT r.id,r.target_id FROM backup_runs r
+        WHERE r.id=${id}::uuid AND r.status='completed'
+          AND r.deleted_at IS NULL AND r.file_name IS NOT NULL
+          AND r.id <> (
+            SELECT last.id FROM backup_runs last
+            WHERE last.target_id=r.target_id AND last.status='completed'
+              AND last.deleted_at IS NULL AND last.file_name IS NOT NULL
+            ORDER BY last.started_at DESC,last.id DESC LIMIT 1
+          )
+      )
+      UPDATE backup_runs r SET delete_requested_at=now(),delete_error=NULL
+      FROM requested WHERE r.id=requested.id
+      RETURNING r.id`;
+    if(!updated.length)
+      throw new BadRequestException('The last successful backup of a storage destination is protected');
+    return {response:{queued:true,note:'Удаление архива передано агенту VPS. Последняя успешная копия защищена.'}};
+  }
+
   private checkId(id:string){if(!validUUID.test(id))throw new BadRequestException('Invalid UUID');}
 }
