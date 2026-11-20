@@ -1,0 +1,38 @@
+FROM node:24.22.3-trixie-slim AS frontend-build
+WORKDIR /build
+COPY frontend/package*.json ./
+COPY frontend/.npmrc ./
+RUN npm ci --no-audit --no-fund
+# Use the local fork contracts and Subpage types (not the published 2.8.x npm versions).
+# Otherwise new node fields are stripped by old Zod schemas on the frontend.
+COPY backend/libs/contract /fork-libs/contract
+COPY backend/libs/subscription-page /fork-libs/subscription-page
+RUN ln -s /build/node_modules /fork-libs/contract/node_modules \
+    && ln -s /build/node_modules /fork-libs/subscription-page/node_modules \
+    && /build/node_modules/.bin/tsc -p /fork-libs/contract/tsconfig.backend.json \
+    && /build/node_modules/.bin/tsc -p /fork-libs/contract/tsconfig.frontend.json \
+    && /build/node_modules/.bin/tsc -p /fork-libs/subscription-page/tsconfig.backend.json \
+    && /build/node_modules/.bin/tsc -p /fork-libs/subscription-page/tsconfig.frontend.json \
+    && cp -a /fork-libs/contract/build/. /build/node_modules/@remnawave/backend-contract/build/ \
+    && cp -a /fork-libs/subscription-page/build/. /build/node_modules/@remnawave/subscription-page-types/build/
+COPY frontend/ ./
+RUN NODE_OPTIONS=--max-old-space-size=3072 npm run start:build
+
+FROM node:24.22.3-trixie-slim AS backend-build
+WORKDIR /app
+ENV HUSKY=0
+COPY backend/package*.json ./
+COPY backend/.npmrc ./
+COPY backend/prisma ./prisma
+COPY backend/prisma.config.ts ./
+COPY backend/patches ./patches
+RUN npm ci --no-audit --no-fund
+COPY backend/ ./
+RUN DATABASE_URL=postgresql://postgres:postgres@localhost:5432/build npm run migrate:generate
+COPY --from=frontend-build /build/dist ./frontend
+RUN NODE_OPTIONS=--max-old-space-size=3072 npm run build && npm run build:seed
+
+FROM backend-build AS development
+ENV NODE_ENV=production
+COPY backend/configs /var/lib/remnawave/configs
+CMD ["node", "dist/src/main.js"]

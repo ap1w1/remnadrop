@@ -1,0 +1,21 @@
+{
+  "source": "https://validator.remna.dev",
+  "files": {
+    "wasm_exec.js": {
+      "sha256": "0c949f4996f9a89698e4b5c586de32249c3b69b7baadb64d220073cc04acba14",
+      "bytes": 16992
+    },
+    "xray.schema.json": {
+      "sha256": "561299d0461425132b46c4305c5847ffe827b74a0853e14751f070ef28eb55de",
+      "bytes": 1138599
+    },
+    "xray.schema.cn.json": {
+      "sha256": "75a6da5a2a27533de204e3cb18d1ea6f5cb57141ca99fee524bce2abb5780207",
+      "bytes": 685809
+    },
+    "main.wasm": {
+      "sha256": "ef9f3d3bd566daeae2687d26302b21c1db8d56261839e91dc8b7744339a93e70",
+      "bytes": 58037604
+    }
+  }
+}
