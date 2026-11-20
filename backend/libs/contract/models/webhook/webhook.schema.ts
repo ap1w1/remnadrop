@@ -123,7 +123,32 @@ export const RemnawaveWebhookTorrentBlockerEvents = z.object({
     data: z.object({
         node: NodesSchema,
         user: ExtendedUsersSchema,
+        // A device can only be inferred from a recent HWID subscription request IP.
+        // It is not cryptographic proof of which device sent the torrent traffic.
+        device: z.object({
+            hwid: z.string(),
+            platform: z.string().nullable(),
+            model: z.string().nullable(),
+            userAgent: z.string().nullable(),
+        }).nullable(),
+        deviceIdentification: z.object({
+            status: z.enum(['probable', 'unknown']),
+            method: z.literal('ip'),
+            candidateCount: z.number().int().nonnegative(),
+        }),
         report: z.object({
+            // Kept in the report for consumers that already read report.device.
+            device: z.object({
+                hwid: z.string(),
+                platform: z.string().nullable(),
+                model: z.string().nullable(),
+                userAgent: z.string().nullable(),
+            }).nullable().optional(),
+            deviceIdentification: z.object({
+                status: z.enum(['probable', 'unknown']),
+                method: z.literal('ip'),
+                candidateCount: z.number().int().nonnegative(),
+            }).optional(),
             actionReport: z.object({
                 blocked: z.boolean(),
                 ip: z.string(),
