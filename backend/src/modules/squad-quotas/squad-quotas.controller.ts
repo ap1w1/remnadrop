@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, UseGuards } from '@nestjs/common';
 import { Roles } from '@common/decorators/roles/roles';
 import { ApiScopeResource } from '@common/decorators/scopes';
 import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
@@ -40,6 +40,10 @@ export class SquadQuotasController {
     @Put(':nodeUuid')
     async configure(@Param('userUuid', ParseUUIDPipe) userUuid: string, @Param('nodeUuid', ParseUUIDPipe) nodeUuid: string, @Body() body: { limitBytes: string | null; periodDays?: number | null; thresholdPercent?: number }) {
         return { response: await this.quotas.configure(userUuid, nodeUuid, body.limitBytes, body.periodDays ?? null, body.thresholdPercent ?? 80) };
+    }
+    @Delete(':nodeUuid')
+    async remove(@Param('userUuid', ParseUUIDPipe) userUuid:string,@Param('nodeUuid', ParseUUIDPipe) nodeUuid:string) {
+        return {response:await this.quotas.remove(userUuid,nodeUuid)};
     }
     @Post(':nodeUuid/reset')
     async reset(@Param('userUuid', ParseUUIDPipe) userUuid: string, @Param('nodeUuid', ParseUUIDPipe) nodeUuid: string) {
