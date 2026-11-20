@@ -14,5 +14,6 @@ export class BackupsController {
   @Post('targets') create(@Body() body:Record<string,unknown>){return this.service.create(body);}
   @Patch('targets/:id') update(@Param('id') id:string,@Body() body:Record<string,unknown>){return this.service.update(id,body);}
   @Post('targets/:id/run') run(@Param('id') id:string){return this.service.trigger(id);}
+  @Delete('runs/:id') deleteRun(@Param('id') id:string){return this.service.requestArchiveDeletion(id);}
   @Delete('targets/:id') disable(@Param('id') id:string){return this.service.remove(id);}
 }
