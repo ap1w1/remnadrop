@@ -14,6 +14,97 @@ export class SquadQuotasService {
         return this.db.$queryRaw<Quota[]>`SELECT * FROM user_node_quotas WHERE user_uuid=${userUuid}::uuid ORDER BY node_uuid`;
     }
 
+
+    /** One reset schedule and warning threshold for the whole subscription.
+     * Legacy per-node schedules remain in place until an admin saves a policy. */
+    async getPolicy(userUuid:string) {
+        const rows=await this.db.$queryRaw<{period_days:number|null;reset_at:Date|null;threshold_percent:number}[]>`
+            SELECT period_days,reset_at,threshold_percent
+            FROM user_node_quota_preferences WHERE user_uuid=${userUuid}::uuid`;
+        const policy=rows[0];
+        return policy
+            ? {mode:'shared' as const,periodDays:policy.period_days,resetAt:policy.reset_at,thresholdPercent:policy.threshold_percent}
+            : {mode:'legacy' as const,periodDays:null,resetAt:null,thresholdPercent:80};
+    }
+
+    async setPolicy(userUuid:string,periodDays:number|null,thresholdPercent:number) {
+        if(periodDays!==null&&(!Number.isInteger(periodDays)||periodDays<1||periodDays>366))
+            throw new BadRequestException('periodDays must be null or 1–366');
+        if(!Number.isInteger(thresholdPercent)||thresholdPercent<1||thresholdPercent>99)
+            throw new BadRequestException('thresholdPercent must be 1–99');
+        await this.db.$transaction(async tx=>{
+            const user=await tx.users.findUnique({where:{uuid:userUuid}});
+            if(!user)throw new NotFoundException('User not found');
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${user.tId})`;
+            await tx.$executeRaw`
+                INSERT INTO user_node_quota_preferences(user_uuid,period_days,reset_at,threshold_percent)
+                VALUES (${userUuid}::uuid,${periodDays},CASE WHEN ${periodDays}::int IS NULL THEN NULL ELSE now()+${periodDays}::int*interval '1 day' END,${thresholdPercent})
+                ON CONFLICT(user_uuid) DO UPDATE SET
+                  reset_at=CASE WHEN user_node_quota_preferences.period_days IS DISTINCT FROM excluded.period_days
+                      THEN excluded.reset_at ELSE user_node_quota_preferences.reset_at END,
+                  period_days=excluded.period_days,threshold_percent=excluded.threshold_percent,updated_at=now()`;
+            // Preserve accumulated usage. Do not silently reset already used traffic.
+            // Per-node scheduled resets are replaced by this user-wide policy.
+            await tx.$executeRaw`
+                UPDATE user_node_quotas SET
+                    period_days=NULL, reset_at=NULL,threshold_percent=${thresholdPercent},
+                    threshold_sent=CASE WHEN threshold_percent IS DISTINCT FROM ${thresholdPercent} THEN false ELSE threshold_sent END,
+                    updated_at=now()
+                WHERE user_uuid=${userUuid}::uuid`;
+        });
+        return this.getPolicy(userUuid);
+    }
+
+    /** Reset every node at once; emit per-node events and schedule node sync. */
+    async resetAll(userUuid:string,onlyIfDue=false) {
+        return this.db.$transaction(async tx=>{
+            const user=await tx.users.findUnique({where:{uuid:userUuid}});
+            if(!user)throw new NotFoundException('User not found');
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${user.tId})`;
+            const policy=await tx.$queryRaw<{period_days:number|null;reset_at:Date|null}[]>`
+                SELECT period_days,reset_at FROM user_node_quota_preferences
+                WHERE user_uuid=${userUuid}::uuid FOR UPDATE`;
+            if(onlyIfDue&&(!policy.length||!policy[0].reset_at||policy[0].reset_at>new Date()))
+                return {success:true,resetCount:0};
+            // Ensure one reset time for all nodes and no reprocessing of a due period.
+            if(policy.length)await tx.$executeRaw`
+                UPDATE user_node_quota_preferences SET
+                    reset_at=CASE WHEN period_days IS NULL THEN NULL ELSE now()+period_days*interval '1 day' END,
+                    updated_at=now() WHERE user_uuid=${userUuid}::uuid`;
+            const previous=await tx.$queryRaw<{node_uuid:string;used_bytes:bigint;limit_bytes:bigint|null;blocked:boolean}[]>`
+                SELECT node_uuid,used_bytes,limit_bytes,blocked FROM user_node_quotas
+                WHERE user_uuid=${userUuid}::uuid FOR UPDATE`;
+            await tx.$executeRaw`
+                UPDATE user_node_quotas SET used_bytes=0,blocked=false,threshold_sent=false,
+                    reset_at=CASE WHEN ${policy.length>0}::boolean THEN NULL
+                        ELSE CASE WHEN period_days IS NULL THEN NULL ELSE now()+period_days*interval '1 day' END END,
+                    updated_at=now()
+                WHERE user_uuid=${userUuid}::uuid`;
+            for(const row of previous) {
+                await tx.$executeRaw`
+                    INSERT INTO node_quota_events(user_uuid,node_uuid,event,used_bytes,limit_bytes)
+                    VALUES (${userUuid}::uuid,${row.node_uuid}::uuid,'LOCATION_TRAFFIC_RESET',0,${row.limit_bytes})`;
+            }
+            if(previous.length) await tx.$executeRaw`
+                INSERT INTO quota_sync(user_uuid) VALUES (${userUuid}::uuid)
+                ON CONFLICT(user_uuid) DO UPDATE SET revision=quota_sync.revision+1,updated_at=now()`;
+            return {success:true,resetCount:previous.length};
+        });
+    }
+
+    async status(userUuid:string) {
+        const [rows,pending]=await Promise.all([
+            this.list(userUuid),
+            this.db.$queryRaw<{revision:bigint}[]>`SELECT revision FROM quota_sync WHERE user_uuid=${userUuid}::uuid`
+        ]);
+        return {pendingSync:pending.length>0,items:rows.map(q=>({
+            nodeUuid:q.node_uuid,usedBytes:q.used_bytes.toString(),
+            limitBytes:q.limit_bytes?.toString()??null,
+            remainingBytes:q.limit_bytes===null?null:(q.limit_bytes>q.used_bytes?q.limit_bytes-q.used_bytes:0n).toString(),
+            blocked:q.blocked
+        }))};
+    }
+
     async blockedUsers(nodeUuid: string) {
         const rows=await this.db.$queryRaw<{t_id:bigint}[]>`SELECT u.t_id FROM user_node_quotas q JOIN users u ON u.uuid=q.user_uuid WHERE q.node_uuid=${nodeUuid}::uuid AND q.blocked`;
         return new Set(rows.map(r=>r.t_id.toString()));
@@ -53,10 +144,14 @@ export class SquadQuotasService {
             const user = await tx.users.findUnique({ where: { uuid: userUuid } });
             if (!user) throw new NotFoundException('User not found');
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(${user.tId})`;
+            const preferences=await tx.$queryRaw<{threshold_percent:number}[]>`
+                SELECT threshold_percent FROM user_node_quota_preferences WHERE user_uuid=${userUuid}::uuid`;
+            const shared=preferences.length>0;
+            if(shared)thresholdPercent=preferences[0].threshold_percent;
             if (!await tx.nodes.findUnique({where:{uuid:nodeUuid}})) throw new NotFoundException('Node not found');
             await tx.$executeRaw`
                 INSERT INTO user_node_quotas(user_uuid,node_uuid,limit_bytes,period_days,reset_at)
-                VALUES (${userUuid}::uuid,${nodeUuid}::uuid,${limit === null ? null : BigInt(limit)},${periodDays},CASE WHEN ${periodDays}::int IS NULL THEN NULL ELSE now()+${periodDays}::int*interval '1 day' END)
+                VALUES (${userUuid}::uuid,${nodeUuid}::uuid,${limit === null ? null : BigInt(limit)},${shared?null:periodDays},CASE WHEN ${shared?null:periodDays}::int IS NULL THEN NULL ELSE now()+${periodDays}::int*interval '1 day' END)
                 ON CONFLICT(user_uuid,node_uuid) DO UPDATE SET limit_bytes=excluded.limit_bytes,period_days=excluded.period_days,
                 reset_at=CASE WHEN user_node_quotas.period_days IS DISTINCT FROM excluded.period_days THEN excluded.reset_at ELSE user_node_quotas.reset_at END,updated_at=now()`;
             await tx.$executeRaw`UPDATE user_node_quotas SET threshold_percent=${thresholdPercent} WHERE user_uuid=${userUuid}::uuid AND node_uuid=${nodeUuid}::uuid`;
@@ -66,6 +161,7 @@ export class SquadQuotasService {
     }
 
     async reset(userUuid: string, nodeUuid: string, onlyIfDue = false) {
+        if((await this.getPolicy(userUuid)).mode==='shared') return this.resetAll(userUuid,onlyIfDue);
         return this.db.$transaction(async tx => {
             const user = await tx.users.findUnique({ where: { uuid: userUuid } });
             if (!user) throw new NotFoundException();
