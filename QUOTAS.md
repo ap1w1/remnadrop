@@ -23,7 +23,8 @@
 | PUT | `/api/users/{userUuid}/node-quotas/settings` | Установить общий период и порог |
 | PUT | `/api/users/{userUuid}/node-quotas/{nodeUuid}` | Создать или изменить индивидуальный лимит |
 | POST | `/api/users/{userUuid}/node-quotas/reset-all` | Сбросить потребление на всех нодах подписки |
-| POST | `/api/users/{userUuid}/node-quotas/{nodeUuid}/reset` | Сброс отдельной ноды **только в legacy-режиме**; в shared-режиме выполняется общий сброс |
+| POST | `/api/users/{userUuid}/node-quotas/{nodeUuid}/reset` | Ручной сброс **только указанной ноды** в любом режиме; общий период подписки не меняется |
+| DELETE | `/api/users/{userUuid}/node-quotas/{nodeUuid}` | Удаление индивидуального лимита ноды и постановка синхронизации доступа в очередь |
 
 **Примеры тел запросов:**
 
