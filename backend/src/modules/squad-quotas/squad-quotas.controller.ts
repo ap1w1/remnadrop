@@ -17,6 +17,26 @@ export class SquadQuotasController {
     async list(@Param('userUuid', ParseUUIDPipe) userUuid: string) {
         return { response: await this.quotas.list(userUuid), legacyNeedsReview: await this.quotas.legacyNeedsReview(userUuid) };
     }
+    /** Common settings for every node in this user's subscription. */
+    @Get('settings')
+    async getSettings(@Param('userUuid', ParseUUIDPipe) userUuid: string) {
+        return {response:await this.quotas.getPolicy(userUuid)};
+    }
+    @Put('settings')
+    async setSettings(
+        @Param('userUuid', ParseUUIDPipe) userUuid:string,
+        @Body() body:{periodDays:number|null;thresholdPercent:number},
+    ) {
+        return {response:await this.quotas.setPolicy(userUuid,body.periodDays,body.thresholdPercent)};
+    }
+    @Get('status')
+    async status(@Param('userUuid', ParseUUIDPipe) userUuid:string) {
+        return {response:await this.quotas.status(userUuid)};
+    }
+    @Post('reset-all')
+    async resetAll(@Param('userUuid', ParseUUIDPipe) userUuid:string) {
+        return {response:await this.quotas.resetAll(userUuid)};
+    }
     @Put(':nodeUuid')
     async configure(@Param('userUuid', ParseUUIDPipe) userUuid: string, @Param('nodeUuid', ParseUUIDPipe) nodeUuid: string, @Body() body: { limitBytes: string | null; periodDays?: number | null; thresholdPercent?: number }) {
         return { response: await this.quotas.configure(userUuid, nodeUuid, body.limitBytes, body.periodDays ?? null, body.thresholdPercent ?? 80) };
