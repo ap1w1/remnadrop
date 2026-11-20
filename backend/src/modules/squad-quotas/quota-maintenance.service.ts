@@ -23,7 +23,18 @@ export class QuotaMaintenanceService implements OnModuleInit, OnModuleDestroy {
         this.busy = true;
         try {
             await this.webhooks.deliver();
-            const due = await this.db.$queryRaw<{ user_uuid: string; node_uuid: string }[]>`SELECT user_uuid,node_uuid FROM user_node_quotas WHERE reset_at<=now() LIMIT 100`;
+            // One atomic reset across ALL nodes for subscriptions using shared policies.
+            const dueShared=await this.db.$queryRaw<{user_uuid:string}[]>`
+                SELECT user_uuid FROM user_node_quota_preferences
+                WHERE reset_at<=now() ORDER BY reset_at LIMIT 100`;
+            for (const row of dueShared) await this.quotas.resetAll(row.user_uuid,true);
+            // Existing installations retain legacy per-node schedules until a shared
+            // policy is explicitly configured. Do not silently alter old user quotas.
+            const due = await this.db.$queryRaw<{ user_uuid: string; node_uuid: string }[]>`
+                SELECT q.user_uuid,q.node_uuid FROM user_node_quotas q
+                WHERE q.reset_at<=now() AND NOT EXISTS(
+                    SELECT 1 FROM user_node_quota_preferences p WHERE p.user_uuid=q.user_uuid
+                ) ORDER BY q.reset_at LIMIT 100`;
             for (const q of due) await this.quotas.reset(q.user_uuid, q.node_uuid, true);
             const pending = await this.db.$queryRaw<{ user_uuid: string; revision: bigint }[]>`SELECT user_uuid,revision FROM quota_sync ORDER BY updated_at LIMIT 100`;
             for (const row of pending) {
