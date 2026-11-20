@@ -55,9 +55,33 @@ rsync -a --delete \
   "$SOURCE/" "$TARGET/"
 
 git -C "$TARGET" add -A
-if git -C "$TARGET" diff --cached --name-only | grep -Ei '(^|/)(\.env($|\.)|id_rsa|id_ed25519|secrets/|credentials/)|\.(pem|key|p12|pfx|dump|backup|sqlite3?)$'; then
-  fail "Sensitive filenames staged. Nothing pushed."
-fi
+# Permit only the intentionally public .env.sample/.env.example templates.
+# Reject actual env files and secrets even when a .gitignore rule is changed.
+python3 - "$TARGET" <<'PY'
+import re, subprocess, sys
+repo = sys.argv[1]
+paths = subprocess.check_output(
+    ["git", "-C", repo, "diff", "--cached", "--name-only", "-z"]
+).split(b"\0")
+for raw in paths:
+    if not raw:
+        continue
+    p = raw.decode("utf-8")
+    parts = p.split("/")
+    name = parts[-1].lower()
+    if name in (".env.sample", ".env.example"):
+        continue
+    suspicious = (
+        name == ".env"
+        or name.startswith(".env.")
+        or name in ("id_rsa", "id_ed25519")
+        or "secrets" in parts
+        or "credentials" in parts
+        or bool(re.search(r"\.(pem|key|p12|pfx|dump|backup|sqlite3?)$", name))
+    )
+    if suspicious:
+        raise SystemExit(f"Sensitive filename staged: {p}. Nothing pushed.")
+PY
 git -C "$TARGET" diff --cached --stat | tail -25
 if git -C "$TARGET" diff --cached --quiet; then echo "No new changes"; exit 0; fi
 
