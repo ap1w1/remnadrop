@@ -38,9 +38,11 @@ jobs:
           sudo python3 -m unittest discover -s tests -v
           node --test tests/limiter-runtime.cjs
       - name: Build application image
+        id: image
         run: |
           docker build --progress=plain -f Dockerfile.dev -t remnadrop-integrations-qa .
       - name: Check features packaged in the final image
+        id: package
         run: |
           docker run --rm --network none --entrypoint sh remnadrop-integrations-qa -ec '
             test -s /app/prisma/migrations/20261122000100_integrations_limiter_cloudflare/migration.sql
@@ -59,12 +61,14 @@ jobs:
             -v "$PWD/tests/integrations:/checks:ro" \
             --entrypoint sh remnadrop-integrations-qa -ec 'node --test /checks/*.test.cjs'
       - name: Upgrade test database and check application API
+        if: ${{ always() && !cancelled() && steps.package.outcome == 'success' }}
         run: |
           bash tests/integrations/database-smoke.sh remnadrop-integrations-qa
       - name: Agent unit tests
         run: |
           python3 -m unittest discover -s backup-agent -p 'test*.py' -v
       - name: Render production UI and exercise desktop and mobile workflows
+        if: ${{ always() && !cancelled() && steps.package.outcome == 'success' }}
         run: |
           npm install --prefix "$RUNNER_TEMP/remnadrop-ui-qa" --no-save playwright@1.57.0
           "$RUNNER_TEMP/remnadrop-ui-qa/node_modules/.bin/playwright" install --with-deps chromium
