@@ -57,7 +57,7 @@ export function LimiterPage(){
      })
      setCredentialStatus(true);setTelegramToken('');setTelegramChat('');setTelegramAdmins('')
      setMaxmindKey('');setHwidSquadIds('')
-     setNotice('Секретные настройки сохранены в зашифрованном виде. Сервис применит их при синхронизации.')
+     setNotice('Секреты зашифрованы. Встроенный Limiter применит их автоматически.')
    }catch(e){setError(errMessage(e))}finally{setBusy(false)}
  }
  const removeCredentials=async()=>{
@@ -78,13 +78,13 @@ export function LimiterPage(){
      description={description} value={settings[key] as number} onChange={v=>change(key,Number(v) as never)}/>
  return <Page title="Limiter"><Stack gap="md">
    <Group justify="space-between" wrap="wrap" align="center"><Group gap="sm"><TbShieldCheck size={30}/>
-     <div><Title order={2}>Limiter</Title><Text c="dimmed" size="sm">Оригинальный Remnawave Limiter 5.1.0 через API-адаптер RemnaDrop 2.8.1</Text></div></Group>
+     <div><Title order={2}>Limiter</Title><Text c="dimmed" size="sm">Встроенный Limiter 5.1.0 — один Docker-контейнер с RemnaDrop 2.8.1</Text></div></Group>
      <Button variant="light" leftSection={<TbRefresh size={16}/>} loading={loading} onClick={()=>void refresh().catch(e=>setError(errMessage(e)))}>Обновить</Button></Group>
    {error&&<Alert color="red" withCloseButton onClose={()=>setError('')}>{error}</Alert>}
    {notice&&<Alert color="teal" withCloseButton onClose={()=>setNotice('')}>{notice}</Alert>}
    {settings.lastError&&<Alert color="yellow" title="Состояние подключения Limiter">{settings.lastError}</Alert>}
    {settings.enabled&&(!settings.lastScanAt||Date.now()-new Date(settings.lastScanAt).getTime()>120000)&&
-     <Alert color="orange" title="Сервис не подтверждён">Limiter включён в настройках, но служба не присылает heartbeat. Убедитесь, что дополнительный контейнер Limiter 5.1.0 установлен и подключён.</Alert>}
+     <Alert color="orange" title="Сервис не подтверждён">Limiter разрешён, но встроенный процесс не запущен. Проверьте Telegram-настройки, Redis и журнал панели.</Alert>}
    <SimpleGrid cols={{base:1,sm:3}} spacing="xs">
      <Card withBorder p="sm"><Text c="dimmed" size="xs">Состояние</Text><Badge mt={6} color={settings.enabled?'teal':'gray'}>{settings.enabled?'Разрешён':'Выключен'}</Badge></Card>
      <Card withBorder p="sm"><Text c="dimmed" size="xs">Режим</Text><Title order={4}>{settings.mode==='auto'?'Автоматический':'Ручной'}</Title></Card>
@@ -93,7 +93,7 @@ export function LimiterPage(){
    <Card withBorder radius="md" padding="md"><Stack gap="md">
      <Group justify="space-between"><Title order={4}>Интеграции Limiter 5.1.0</Title>
        <Badge color={credentialStatus?'teal':'gray'} variant="light">{credentialStatus?'Секреты сохранены':'Не настроено'}</Badge></Group>
-     <Text size="sm" c="dimmed">Telegram обязателен для исходного Limiter 5.1.0. Эти данные хранятся в PostgreSQL с AES-256-GCM и передаются только сервису через внутренний API.</Text>
+     <Text size="sm" c="dimmed">Telegram обязателен для оригинального Limiter 5.1.0. Данные шифруются в PostgreSQL и передаются только встроенному процессу.</Text>
      <SimpleGrid cols={{base:1,sm:2}}>
        <PasswordInput label="Telegram Bot Token" description="Токен от BotFather"
          placeholder={credentialStatus?'Введите новый токен для замены':'123456:...'}
@@ -116,7 +116,7 @@ export function LimiterPage(){
    <Card withBorder radius="md" padding="md"><Stack gap="md">
      <Group justify="space-between"><Group gap="xs"><TbAdjustments size={21}/><Title order={4}>Настройки проверки</Title></Group>
        <Switch label={settings.enabled?'Включить Limiter 5.1.0':'Limiter выключен'} checked={settings.enabled} onChange={e=>change('enabled',e.currentTarget.checked)}/></Group>
-     <Alert color="blue" title="Limiter 5.1.0 + Remnawave 2.8.1">Работает исходный Go Limiter 5.1.0. Адаптер переводит запросы API 3.x в штатные интерфейсы RemnaDrop 2.8.1. Для запуска необходим отдельный контейнер с настроенным Telegram-ботом и секретами.</Alert>
+     <Alert color="blue" title="Limiter 5.1.0 + Remnawave 2.8.1">Оригинальный Go Limiter 5.1.0 уже включён в образ панели. NestJS запускает его внутри контейнера remnawave и подключает к существующему Valkey. Дополнительный контейнер, порт и API-токен не требуются.</Alert>
      <SimpleGrid cols={{base:1,sm:2,lg:4}} spacing="sm">
        <Select label="Режим реагирования" allowDeselect={false} value={settings.mode} onChange={v=>change('mode',(v??'manual') as Mode)}
          data={[{value:'manual',label:'Ручной — Telegram-алерты и кнопки'},{value:'auto',label:'Авто — отключать подписки'}]}/>
@@ -194,6 +194,6 @@ export function LimiterPage(){
        </Table.Tbody>
      </Table></Table.ScrollContainer>
    </Stack></Card>
-   <Text size="xs" c="dimmed">Исходный Go-сервис требует TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID и TELEGRAM_ADMIN_IDS. Настройки задаются в панели, применяются через адаптер и supervisor; события подтверждённых нарушений поступают по HMAC-вебхуку в PostgreSQL. Мониторинг трафика и общий HWID отправляют собственные Telegram-алерты.</Text>
+   <Text size="xs" c="dimmed">Limiter 5.1.0 запускается внутри контейнера remnawave после включения. Используется Valkey панели через Unix-сокет (отдельная Redis DB 8). Автоблокировка требует сохраняемого Redis (AOF или RDB). События поступают в PostgreSQL через внутренний подписанный вебхук.</Text>
  </Stack></Page>
 }
