@@ -79,6 +79,49 @@ function DnsActionFields({ action, accounts, hasRotation, onChange }: {
     </Stack>
 }
 
+
+type DpiAction = Extract<AutomationAction, { type: 'dpi_check' }>
+type DpiPop = { id: number; name?: string; city?: string; region?: string; operator?: string }
+function DpiRegionFields({ action, onChange, dpiCostLimit }: {
+    action: DpiAction; onChange: (action: DpiAction) => void; dpiCostLimit: number
+}) {
+    const [pops, setPops] = useState<DpiPop[]>([])
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
+    const specificPoints = action.pop_ids !== undefined
+    useEffect(() => {
+        if (!specificPoints) { setPops([]); return }
+        const controller = new AbortController()
+        setPops([]); setError(''); setLoading(true)
+        void instance.get('/api/dpi-checker/pops', { params: { location: action.location }, signal: controller.signal })
+            .then(response => {
+                if (controller.signal.aborted) return
+                const data = response.data.response
+                setPops(Array.isArray(data) ? data : Array.isArray(data?.pops) ? data.pops : [])
+            })
+            .catch(cause => { if (!controller.signal.aborted) setError(apiError(cause, 'Не удалось получить региональные точки проверки')) })
+            .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+        return () => controller.abort()
+    }, [action.location, specificPoints])
+    return <Stack gap="sm">
+        <Select label="Страна и тип сети" searchable allowDeselect={false} value={action.location}
+            data={[{ value: 'russia', label: 'Россия' }, { value: 'russia_mobile', label: 'Россия · мобильные сети' },
+                { value: 'china', label: 'Китай' }, { value: 'iran', label: 'Иран' }, { value: 'turkmenistan', label: 'Туркменистан' }]}
+            onChange={value => onChange({ ...action, location: value || 'russia', pop_ids: specificPoints ? [] : undefined })}/>
+        <Switch label="Выбирать конкретные регионы и точки проверки"
+            description="Отключено — сервис самостоятельно выбирает оптимальные точки; включено — выбирайте города, регионы и операторов из доступных PoP"
+            checked={specificPoints} onChange={event => onChange({ ...action, pop_ids: event.currentTarget.checked ? [] : undefined })}/>
+        {specificPoints && <MultiSelect label="Регионы и точки проверки (PoP)" searchable clearable
+            placeholder={loading ? 'Загрузка регионов…' : 'Найти город, регион или оператора'} disabled={loading}
+            maxValues={100} value={(action.pop_ids ?? []).map(String)}
+            onChange={values => onChange({ ...action, pop_ids: values.map(Number) })}
+            data={pops.map(pop => ({ value: String(pop.id), label: [pop.name, pop.city, pop.region, pop.operator]
+                .filter(Boolean).filter((item, index, all) => all.indexOf(item) === index).join(' · ') || 'PoP ' + pop.id }))}/>}
+        {error && <Alert color="red">{error}</Alert>}
+        <Text size="xs" c="dimmed">Проверка платная, не более ${dpiCostLimit} USD за действие. Результат отображается в DPI Checker. Выбор PoP пока не задаёт автоматическое ветвление после проверки.</Text>
+    </Stack>
+}
+
 export function AutomationPreviewView({ preview }: { preview: AutomationPreview }) {
     return <Stack gap="md">
         <Card withBorder radius="md" p="md">
@@ -205,12 +248,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                                 data={nodeHosts.map(host => ({ value: host.uuid, label: `${host.remark}${host.node_uuids.length > 1 ? ' · общий хост' : ''}`, disabled: action.type !== 'dpi_check' && host.node_uuids.length > 1 }))} />
                             {action.type !== 'dpi_check' && <Text size="xs" c="dimmed">Общие хосты нескольких нод исключены, чтобы не менять доступность других нод.</Text>}
                         </>}
-                        {action.type === 'dpi_check' && <>
-                            <Select label="Регион проверки" searchable allowDeselect={false} value={action.location}
-                                data={[{ value: 'russia', label: 'Россия' }, { value: 'russia_mobile', label: 'Россия · мобильные сети' }, { value: 'china', label: 'Китай' }, { value: 'iran', label: 'Иран' }, { value: 'turkmenistan', label: 'Туркменистан' }]}
-                                onChange={value => setAction(index, { ...action, location: value || 'russia' })} />
-                            <Text size="sm" c="orange">Платная проверка. Лимит на действие: ${dpiCostLimit}. Результат проверки появится в DPI Checker.</Text>
-                        </>}
+                        {action.type === 'dpi_check' && <DpiRegionFields action={action} dpiCostLimit={dpiCostLimit} onChange={value => setAction(index, value)} />}
                         {action.type === 'rotate_ip' && <>
                             <Text size="sm">Будет выбран доступный запасной IP из пула ноды. Связанные хосты переключатся на него.</Text>
                             {!draft.node_uuid && <Alert color="orange">Выберите ноду на шаге «Условие».</Alert>}
