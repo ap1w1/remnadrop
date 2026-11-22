@@ -56,15 +56,15 @@ export class CloudflareDnsWebhookController {
    const given=signature.toLowerCase().replace(/^sha256=/,'');
    if(!/^[0-9a-f]{64}$/.test(given)||!timingSafeEqual(Buffer.from(given,'hex'),Buffer.from(expected,'hex')))
      throw new UnauthorizedException('Invalid webhook signature');
-   const received=await this.db.$executeRaw\`INSERT INTO cf_dns_webhook_receipts(event_id)
-     VALUES(\${id}::uuid) ON CONFLICT DO NOTHING\`;
+   const received=await this.db.$executeRaw`INSERT INTO cf_dns_webhook_receipts(event_id)
+     VALUES(${id}::uuid) ON CONFLICT DO NOTHING`;
    if(!received)return {response:{duplicate:true}};
    try{
      if(!body.nodeUuid||!body.oldIp||!body.newIp)throw new BadRequestException('Missing rotation fields');
      const result=await this.cf.syncAfterRotation(body.nodeUuid,body.oldIp,body.newIp);
      return {response:{success:true,...result}};
    }catch(error){
-     await this.db.$executeRaw\`DELETE FROM cf_dns_webhook_receipts WHERE event_id=\${id}::uuid\`;
+     await this.db.$executeRaw`DELETE FROM cf_dns_webhook_receipts WHERE event_id=${id}::uuid`;
      throw error;
    }
  }
