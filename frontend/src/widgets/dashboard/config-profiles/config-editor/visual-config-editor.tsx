@@ -1,5 +1,7 @@
 import { ActionIcon, Alert, Badge, Button, Card, Group, NumberInput, ScrollArea, Select, SimpleGrid, Stack, Text, TextInput, Title } from '@mantine/core'
 import { TbCopy, TbPlus, TbTrash } from 'react-icons/tb'
+import { VisualInboundFields } from './visual-inbound-fields'
+import { VisualRoutingFields } from './visual-routing-fields'
 
 type JsonObject = Record<string, unknown>
 type Props = { config: JsonObject; onChange: (next: JsonObject) => void }
@@ -42,7 +44,7 @@ export function VisualConfigEditor({ config, onChange }: Props) {
         <Stack gap="lg">
             <div>
                 <Title order={4}>Визуальный редактор Xray</Title>
-                <Text c="dimmed" size="sm">Основные параметры без ручного редактирования JSON. Дополнительные поля Reality, TLS, sniffing и маршрутизации сохраняются без изменений.</Text>
+                <Text c="dimmed" size="sm">Конструктор входящих подключений, VLESS, REALITY, TLS, xHTTP, WebSocket, gRPC, маршрутизации и исходящих тегов. Неотображаемые поля сохраняются в JSON.</Text>
             </div>
             <Alert color="yellow" variant="light">
                 Изменения попадут в JSON и пройдут штатную проверку Xray перед сохранением. Для сложных протоколов и расширенных параметров переключитесь на вкладку JSON.
@@ -84,8 +86,9 @@ export function VisualConfigEditor({ config, onChange }: Props) {
                             description={typeof inbound.port === 'string' ? 'Нестандартный диапазон: измените в JSON' : undefined}
                             onChange={value=>{if (typeof value === 'number') patchInbound(index,{port:value})}}/>
                         <TextInput label="Протокол" readOnly value={String(inbound.protocol ?? '')}
-                            description="Для смены протокола и его настроек используйте JSON"/>
+                            description="Для изменения протокола используйте JSON"/>
                     </SimpleGrid>
+                    <VisualInboundFields inbound={inbound} onChange={value=>patchInbound(index,value)}/>
                 </Stack>
             </Card>)}
             <Text fw={700}>Исходящие подключения · {outbounds.length}</Text>
@@ -96,7 +99,8 @@ export function VisualConfigEditor({ config, onChange }: Props) {
                     <TextInput label="Протокол" readOnly value={String(outbound.protocol ?? '')}/>
                 </SimpleGrid>
             </Card>)}
-            <Text c="dimmed" size="xs">Полный JSON, неизвестные протоколы и нестандартные свойства не преобразуются в сокращённую схему: редактируются только перечисленные поля.</Text>
+            <VisualRoutingFields config={config} onChange={onChange}/>
+            <Text c="dimmed" size="xs">Сложные исходящие VLESS-подключения, сертификаты, расширенные правила DNS и неизвестные Xray-ключи не переписываются. Для их изменения остаётся режим JSON.</Text>
         </Stack>
     </ScrollArea>
 }
