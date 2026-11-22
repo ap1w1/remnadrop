@@ -68,6 +68,7 @@ const logger = createLogger({
 
 async function bootstrap(): Promise<void> {
     const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+        rawBody: true,
         logger: WinstonModule.createLogger({
             instance: logger,
         }),
