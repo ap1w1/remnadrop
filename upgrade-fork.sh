@@ -62,6 +62,7 @@ docker build --progress=plain -f "$SOURCE/Dockerfile.dev" -t "$IMAGE" "$SOURCE" 
 say 'Verifying new frontend and migration files...'
 docker run --rm --network none --entrypoint sh "$IMAGE" -ec '
   test -f /app/frontend/index.html
+  test -x /usr/local/bin/remnawave-limiter
   test -f /app/prisma/migrations/20261120233000_monitoring_retention/migration.sql
   grep -RqlF "t.me/dpi_checker_robot?start=p453722" /app/frontend
   grep -RqlF "Документация API" /app/frontend
