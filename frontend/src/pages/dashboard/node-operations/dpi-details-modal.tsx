@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { nodeOptionLabel, type NodeOptionData } from '@shared/utils/misc/node-option-label'
 
 export type DpiHostChoice={uuid:string;remark:string;address:string;isDisabled:boolean;isHidden:boolean;inboundUuid:string|null;nodeUuids:string[]}
-export type DpiJobResult={id:string;remote_id:number|null;location:string;host_uuids:string[];status:string;
+export type DpiJobResult={id:string;remote_id:number|null;node_uuid?:string|null;location:string;host_uuids:string[];status:string;
   progress_done:number;progress_total:number;estimated_cost:number|null;actual_cost:number|null;
   error?:string|null;created_at:string;results?:Array<Record<string,unknown>>;remote_response?:Record<string,unknown>|null}
 
@@ -16,21 +16,23 @@ function safeText(value:unknown):string{
 export function DpiDetailsModal({job,hosts,nodes,onClose}:{job:DpiJobResult|null;hosts:DpiHostChoice[];nodes:NodeOptionData[];onClose:()=>void}) {
   const [rawVisible,setRawVisible]=useState(false)
   const selectedHosts=hosts.filter(host=>job?.host_uuids.includes(host.uuid))
+  const selectedNode=job?.node_uuid?nodes.find(node=>node.uuid===job.node_uuid):undefined
   const results=Array.isArray(job?.results)?job.results:[]
   const fullResponse=job?{id:job.id,remote_id:job.remote_id,status:job.status,location:job.location,
     progress:{done:job.progress_done,total:job.progress_total},estimated_cost:job.estimated_cost,
-    actual_cost:job.actual_cost,error:job.error,host_uuids:job.host_uuids,
+    actual_cost:job.actual_cost,error:job.error,host_uuids:job.host_uuids,node_uuid:job.node_uuid,
     upstream_response:job.remote_response??{results,notice:'Ответ сервиса не сохранён для старой проверки'}}:null
   return <Modal opened={!!job} onClose={()=>{setRawVisible(false);onClose()}} title={<Title order={4}>Результаты DPI Checker</Title>}
     centered size="xl" scrollAreaComponent={ScrollArea.Autosize} keepMounted={false}>
     <Stack gap="md">
       <Text c="dimmed" size="sm">Проверка #{job?.remote_id??job?.id??'—'} · {job?.status??'—'} · {job?.progress_done??0}/{job?.progress_total??0} измерений</Text>
       {job?.error&&<Alert color="red">{job.error}</Alert>}
+      {selectedNode&&<Text fw={600}>Нода проверки: {nodeOptionLabel(selectedNode)}</Text>}
       <Text fw={600}>Выбранные хосты</Text>
       <Table.ScrollContainer minWidth={550}><Table striped highlightOnHover>
         <Table.Thead><Table.Tr><Table.Th>Нода</Table.Th><Table.Th>Хост</Table.Th><Table.Th>IP / адрес</Table.Th></Table.Tr></Table.Thead>
         <Table.Tbody>{selectedHosts.map(host=><Table.Tr key={host.uuid}>
-          <Table.Td>{host.nodeUuids.map(id=>nodes.find(n=>n.uuid===id)).filter((n):n is NodeOptionData=>!!n).map(nodeOptionLabel).join(', ')||'—'}</Table.Td>
+          <Table.Td>{selectedNode?nodeOptionLabel(selectedNode):host.nodeUuids.map(id=>nodes.find(n=>n.uuid===id)).filter((n):n is NodeOptionData=>!!n).map(nodeOptionLabel).join(', ')||'—'}</Table.Td>
           <Table.Td>{host.remark}{host.isHidden?' · скрыт':''}</Table.Td>
           <Table.Td>{host.address}</Table.Td>
         </Table.Tr>)}{!selectedHosts.length&&<Table.Tr><Table.Td colSpan={3}>Метаданные хостов недоступны</Table.Td></Table.Tr>}</Table.Tbody>
