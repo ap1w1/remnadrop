@@ -104,7 +104,7 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     return {response:{nodes,hosts}};
   }
   async list(){return {response:await this.db.$queryRaw`SELECT id,remote_id,host_uuids,node_uuid,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,created_at,updated_at FROM dpi_check_jobs ORDER BY created_at DESC LIMIT 100`};}
-  async one(id:string){const rows=await this.db.$queryRaw<any[]>`SELECT id,remote_id,host_uuids,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,results,remote_response,created_at,updated_at FROM dpi_check_jobs WHERE id=${id}::uuid`;
+  async one(id:string){const rows=await this.db.$queryRaw<any[]>`SELECT id,remote_id,host_uuids,node_uuid,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,results,remote_response,created_at,updated_at FROM dpi_check_jobs WHERE id=${id}::uuid`;
     if(!rows.length)throw new NotFoundException();return {response:rows[0]};}
   private async job(id:string){const rows=await this.db.$queryRaw<Job[]>`SELECT * FROM dpi_check_jobs WHERE id=${id}::uuid`;if(!rows.length)throw new NotFoundException();return rows[0];}
   private async keys(job:Job){
