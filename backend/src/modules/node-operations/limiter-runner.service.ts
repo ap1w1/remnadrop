@@ -112,8 +112,11 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
       if(Date.now()<this.nextStartAt)return;
       const redis=this.redisConnection();
       const env=this.environment(config.env,redis.url);
-      if(!env.TELEGRAM_BOT_TOKEN||!env.TELEGRAM_CHAT_ID||!env.TELEGRAM_ADMIN_IDS)
+      if(!env.TELEGRAM_BOT_TOKEN||!env.TELEGRAM_CHAT_ID||!env.TELEGRAM_ADMIN_IDS){
+        // Revoked credentials must stop the old process before reporting to DB.
+        if(this.child)await this.stop();
         throw new Error('Configure Telegram credentials in Tools > Limiter');
+      }
       const digest=createHash('sha256').update(JSON.stringify(config.env)).digest('hex');
       if(this.isRunning()&&digest===this.fingerprint){
         await this.limiter.heartbeat();return;

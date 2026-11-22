@@ -163,6 +163,26 @@ test('disabling the configured engine stops the existing child', async () => {
   assert.equal(h.runner.status().response.running, false);
 });
 
+for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_ADMIN_IDS']) {
+  test('deleting ' + key + ' stops the old child before reporting the error', async () => {
+    const h = harness({ REDIS_HOST: 'redis', REDIS_PORT: '6379' });
+    await h.runner.tick();
+    delete h.config.env[key];
+    const reports = [];
+    h.runner.limiter.heartbeat = async reason => {
+      reports.push({ reason, signal: h.children[0].child.signalCode,
+        running: h.runner.status().response.running });
+    };
+    await h.runner.tick();
+    assert.deepEqual(reports, [{
+      reason: 'Configure Telegram credentials in Tools > Limiter',
+      signal: 'SIGTERM', running: false,
+    }]);
+    assert.equal(h.children.length, 1, 'no replacement starts with missing credentials');
+    assert.equal(h.runner.status().response.running, false);
+  });
+}
+
 test('shutdown during a Redis probe cannot start a new orphan child', async () => {
   const h = harness({ REDIS_HOST: 'redis', REDIS_PORT: '6379' });
   let finishProbe, probeStarted;
