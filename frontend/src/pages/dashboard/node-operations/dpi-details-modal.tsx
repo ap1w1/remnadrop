@@ -5,7 +5,7 @@ import { nodeOptionLabel, type NodeOptionData } from '@shared/utils/misc/node-op
 export type DpiHostChoice={uuid:string;remark:string;address:string;isDisabled:boolean;isHidden:boolean;inboundUuid:string|null;nodeUuids:string[]}
 export type DpiJobResult={id:string;remote_id:number|null;location:string;host_uuids:string[];status:string;
   progress_done:number;progress_total:number;estimated_cost:number|null;actual_cost:number|null;
-  error?:string|null;created_at:string;results?:Array<Record<string,unknown>>}
+  error?:string|null;created_at:string;results?:Array<Record<string,unknown>>;remote_response?:Record<string,unknown>|null}
 
 function safeText(value:unknown):string{
   if(typeof value!=='string' && typeof value!=='number') return '—'
@@ -19,7 +19,8 @@ export function DpiDetailsModal({job,hosts,nodes,onClose}:{job:DpiJobResult|null
   const results=Array.isArray(job?.results)?job.results:[]
   const fullResponse=job?{id:job.id,remote_id:job.remote_id,status:job.status,location:job.location,
     progress:{done:job.progress_done,total:job.progress_total},estimated_cost:job.estimated_cost,
-    actual_cost:job.actual_cost,error:job.error,host_uuids:job.host_uuids,results}:null
+    actual_cost:job.actual_cost,error:job.error,host_uuids:job.host_uuids,
+    upstream_response:job.remote_response??{results,notice:'Ответ сервиса не сохранён для старой проверки'}}:null
   return <Modal opened={!!job} onClose={()=>{setRawVisible(false);onClose()}} title={<Title order={4}>Результаты DPI Checker</Title>}
     centered size="xl" scrollAreaComponent={ScrollArea.Autosize} keepMounted={false}>
     <Stack gap="md">
@@ -38,7 +39,8 @@ export function DpiDetailsModal({job,hosts,nodes,onClose}:{job:DpiJobResult|null
       <Table.ScrollContainer minWidth={640}><Table striped>
         <Table.Thead><Table.Tr><Table.Th>Хост</Table.Th><Table.Th>Регион / PoP</Table.Th><Table.Th>Доступность</Table.Th><Table.Th>Задержка</Table.Th><Table.Th>Ошибка</Table.Th></Table.Tr></Table.Thead>
         <Table.Tbody>{results.map((result,index)=>{
-          const host=typeof result.host_uuid==='string'?selectedHosts.find(h=>h.uuid===result.host_uuid):undefined
+          const host=typeof result.host_uuid==='string'?selectedHosts.find(h=>h.uuid===result.host_uuid):
+            typeof result.host_index==='number'?selectedHosts[result.host_index]:selectedHosts.length===1?selectedHosts[0]:undefined
           const connected=result.connected
           return <Table.Tr key={index}><Table.Td>{host?.remark??(typeof result.host_index==='number'?selectedHosts[result.host_index]?.remark:'Хост не определён')??'—'}</Table.Td>
             <Table.Td>{safeText(result.pop_name??result.region??result.pop_id)}</Table.Td>
@@ -47,7 +49,7 @@ export function DpiDetailsModal({job,hosts,nodes,onClose}:{job:DpiJobResult|null
             <Table.Td><Text size="sm">{safeText(result.error)}</Text></Table.Td></Table.Tr>
         })}{!results.length&&<Table.Tr><Table.Td colSpan={5}><Text c="dimmed" ta="center">Результаты ещё не получены</Text></Table.Td></Table.Tr>}</Table.Tbody>
       </Table></Table.ScrollContainer>
-      <Button variant="light" onClick={()=>setRawVisible(value=>!value)}>{rawVisible?'Скрыть JSON ответа':'Открыть JSON ответа'}</Button>
+      <Button variant="light" onClick={()=>setRawVisible(value=>!value)}>{rawVisible?'Скрыть JSON ответа':'Открыть JSON ответа (без ключей)'}</Button>
       {rawVisible&&<ScrollArea.Autosize mah={380} type="auto"><Code block style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(fullResponse,null,2)}</Code></ScrollArea.Autosize>}
     </Stack>
   </Modal>
