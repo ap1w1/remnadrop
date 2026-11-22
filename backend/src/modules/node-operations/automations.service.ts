@@ -12,7 +12,7 @@ import { NodeIpService } from './node-ip.service';
 import { CloudflareDnsService } from './cloudflare-dns.service';
 
 export type AutomationAction =
-    | { type: 'dpi_check'; hosts: string[]; location: DpiLocation }
+    | { type: 'dpi_check'; hosts: string[]; location: DpiLocation; pop_ids?: number[] }
     | { type: 'hide_hosts' | 'show_hosts'; hosts: string[] }
     | { type: 'rotate_ip'; updateCloudflare?: boolean }
     | { type: 'webhook'; url: string }
@@ -104,7 +104,11 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
                 action.hosts.some(id => typeof id !== 'string' || !UUID.test(id)) || new Set(action.hosts).size !== action.hosts.length) {
                 throw new BadRequestException('Выберите от 1 до 20 разных хостов');
             }
-            if (action.type === 'dpi_check' && !REGIONS.includes(action.location)) throw new BadRequestException('Выберите регион проверки');
+            if (action.type === 'dpi_check') {
+                if (!REGIONS.includes(action.location)) throw new BadRequestException('Выберите страну проверки');
+                if (action.pop_ids !== undefined && (!Array.isArray(action.pop_ids) || action.pop_ids.length<1 || action.pop_ids.length>100 || action.pop_ids.some(id=>!Number.isInteger(id)||id<=0) || new Set(action.pop_ids).size !== action.pop_ids.length))
+                    throw new BadRequestException('Выберите до 100 уникальных точек проверки (PoP)');
+            }
         } else if (action.type === 'webhook') {
             let url: URL;
             try { url = new URL(action.url); } catch { throw new BadRequestException('Укажите корректный HTTPS-адрес вебхука'); }
@@ -407,7 +411,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
                     if (!owned) { leaseLost = true; throw new ConflictException('Выполнение прервано: право на запуск больше не принадлежит этой операции'); }
                     let message = '';
                     if (action.type === 'dpi_check') {
-                        const prepared = await this.dpi.prepare({hosts:action.hosts,location:action.location});
+                        const prepared = await this.dpi.prepare({hosts:action.hosts,location:action.location,pop_ids:action.pop_ids});
                         try { await this.dpi.start(prepared.response.id,this.dpiCostLimit()); }
                         catch (error) { await this.dpi.cancel(prepared.response.id).catch(() => undefined); throw error; }
                         message = `Проверка запущена: ${prepared.response.id}`;
