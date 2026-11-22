@@ -63,6 +63,24 @@ def poll_settings():
     return cfg
 
 
+def heartbeat(error=None):
+    body = json.dumps({"error": error}).encode("utf-8")
+    req = urllib.request.Request(
+        CONTROL_URL.replace("/runtime", "/heartbeat"),
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": "Bearer " + BRIDGE_TOKEN,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+    except Exception:
+        pass
+
+
 def run():
     global process, digest
     signal.signal(signal.SIGTERM, shutdown)
@@ -106,11 +124,13 @@ def run():
                     log("Starting the unmodified upstream Limiter 5.1.0 binary")
                     process = subprocess.Popen([BINARY], env=env, cwd="/app")
                     digest = fingerprint
+            heartbeat()
         except Exception as error:
             # Avoid dangerous stale settings in auto mode while panel is unavailable.
             if failed_since is None:
                 failed_since = time.monotonic()
             log("Cannot apply runtime configuration: " + type(error).__name__)
+            heartbeat(type(error).__name__ + ': ' + str(error)[:200])
             if time.monotonic() - failed_since >= 60:
                 stop()
         for _ in range(INTERVAL):
