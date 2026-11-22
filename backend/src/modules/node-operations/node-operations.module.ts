@@ -9,10 +9,15 @@ import { NodeIpService } from './node-ip.service';
 import { NodeIpController } from './node-ip.controller';
 import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
+import { LimiterService } from './limiter.service';
+import { LimiterController } from './limiter.controller';
+import { CloudflareDnsService } from './cloudflare-dns.service';
+import { CloudflareDnsController, CloudflareDnsWebhookController } from './cloudflare-dns.controller';
+import { DiskMetricsController } from './disk-metrics.controller';
 
 @Module({
   imports:[CqrsModule,UsersModule,SubscriptionTemplateModule],
-  providers:[DpiCheckerService,DpiCredentialsService,NodeIpService,AutomationsService],
-  controllers:[DpiCheckerController,NodeIpController,AutomationsController],
+  providers:[DpiCheckerService,DpiCredentialsService,NodeIpService,CloudflareDnsService,AutomationsService,LimiterService],
+  controllers:[DpiCheckerController,NodeIpController,AutomationsController,LimiterController,CloudflareDnsController,CloudflareDnsWebhookController,DiskMetricsController],
 })
 export class NodeOperationsModule {}
