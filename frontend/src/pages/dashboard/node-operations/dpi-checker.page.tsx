@@ -41,7 +41,7 @@ export function DpiCheckerPage(){
    setBusy(true);setError('')
    let preparedId:string|null=null
    try{
-     const prepared=await instance.post('/api/dpi-checker/checks/prepare',{hosts:selectedForRun,location,...(!optimal?{pop_ids:popIds.map(Number)}:{})})
+     const prepared=await instance.post('/api/dpi-checker/checks/prepare',{hosts:selectedForRun,node_uuid:nodeUuid,location,...(!optimal?{pop_ids:popIds.map(Number)}:{})})
      preparedId=prepared.data.response.id as string
      if(prepared.data.response.estimate?.affordable===false)throw new Error('Недостаточно средств на балансе DPI Checker')
      await instance.post('/api/dpi-checker/checks/'+preparedId+'/start')
