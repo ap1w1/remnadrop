@@ -46,6 +46,7 @@ export function SupportControl() {
     return <Tooltip label="Поддержать форк">
         <HeaderControl className={classes.support} aria-label="Поддержать форк" onClick={() => modals.open({title:'Поддержать RemnaDrop', size:'lg', centered:true, radius:'lg', children:<DonateDialog/>})}>
             <TbHeartFilled />
+            <Text visibleFrom="lg" size="sm" fw={600} style={{whiteSpace:'nowrap'}}>Поддержать проект</Text>
         </HeaderControl>
     </Tooltip>
 }
