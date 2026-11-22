@@ -1,8 +1,9 @@
 import { Anchor, Badge, Card, Divider, Group, SimpleGrid, Stack, Table, Text, Title } from '@mantine/core'
 import { TbExternalLink } from 'react-icons/tb'
+import type { ReactNode } from 'react'
 import { bytes, dateText, obj, rows, type LimiterEvent } from './types'
 
-function Metric({label,value}:{label:string;value:React.ReactNode}){return <div><Text size="xs" c="dimmed">{label}</Text><Text fw={600} size="sm" mt={3}>{value}</Text></div>}
+function Metric({label,value}:{label:string;value:ReactNode}){return <div><Text size="xs" c="dimmed">{label}</Text><Text fw={600} size="sm" mt={3}>{value}</Text></div>}
 export function ReportDetails({data}:{data:Record<string,unknown>}){
  const stats=obj(data.violations),traffic=obj(data.heavyTraffic)
  const top=rows(stats.Top),heavy=rows(traffic.Rows??traffic.Top)
@@ -50,7 +51,7 @@ export function EventDetails({event}:{event:LimiterEvent}){
   {event.event_type==='shared_hwid'&&<>
    <SimpleGrid cols={{base:1,sm:3}}><Metric label="Устройство" value={String(data.Device??'—')}/><Metric label="Приложение" value={String(data.App??'—')}/><Metric label="Создан аккаунт" value={dateText(String(data.Created??''))}/></SimpleGrid>
    <Text size="xs" ff="monospace" style={{overflowWrap:'anywhere'}}>HWID: {String(data.HWID??'—')}</Text>
-   <Title order={5}>Аккаунты с этим устройством</Title><Table.ScrollContainer minWidth={650}><Table striped><Table.Thead><Table.Tr><Table.Th>Пользователь</Table.Th><Table.Th>Статус</Table.Th><Table.Th>Сквады</Table.Th><Table.Th>Первое / последнее появление</Table.Th></Table.Tr></Table.Thead><Table.Tbody>{accounts.map((account,i)=><Table.Tr key={i}><Table.Td>{String(account.Username??account.UserID??'—')}</Table.Td><Table.Td>{account.Deleted?'Аккаунт удалён':String(account.Status??'—')}{account.DeviceRemoved&&<Text size="xs" c="dimmed">Устройство удалено</Text>}</Table.Td><Table.Td>{Array.isArray(account.Squads)?account.Squads.join(', '):'—'}</Table.Td><Table.Td><Text size="xs">{dateText(String(account.Created??''))}</Text><Text size="xs">{dateText(String(account.Seen??''))}</Text></Table.Td></Table.Tr>)}</Table.Tbody></Table></Table.ScrollContainer>
+   <Title order={5}>Аккаунты с этим устройством</Title><Table.ScrollContainer minWidth={650}><Table striped><Table.Thead><Table.Tr><Table.Th>Пользователь</Table.Th><Table.Th>Статус</Table.Th><Table.Th>Сквады</Table.Th><Table.Th>Первое / последнее появление</Table.Th></Table.Tr></Table.Thead><Table.Tbody>{accounts.map((account,i)=><Table.Tr key={i}><Table.Td>{String(account.Username??account.UserID??'—')}</Table.Td><Table.Td>{account.Deleted?'Аккаунт удалён':String(account.Status??'—')}{Boolean(account.DeviceRemoved)&&<Text size="xs" c="dimmed">Устройство удалено</Text>}</Table.Td><Table.Td>{Array.isArray(account.Squads)?account.Squads.join(', '):'—'}</Table.Td><Table.Td><Text size="xs">{dateText(String(account.Created??''))}</Text><Text size="xs">{dateText(String(account.Seen??''))}</Text></Table.Td></Table.Tr>)}</Table.Tbody></Table></Table.ScrollContainer>
    {Number(data.Hidden)>0&&<Text size="xs" c="dimmed">Ещё совпадений: {String(data.Hidden)}</Text>}
   </>}
   {evidence?.Fetches&&<>

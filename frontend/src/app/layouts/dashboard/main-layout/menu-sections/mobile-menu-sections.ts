@@ -179,7 +179,9 @@ export const useMobileMenuSections = (): MenuItem[] => {
                     href: ROUTES.DASHBOARD.TOOLS.SESSIONS_EXPLORER,
                     icon: TbRadar2,
                     id: 'sessions-explorer'
-                },
+                }
+            ]
+        },
         {
             header: t('constants.subscription'),
             id: 'subscription',
@@ -256,8 +258,6 @@ export const useMobileMenuSections = (): MenuItem[] => {
                     id: 'subscription-page'
                 }
             ]
-        }
-    ]
         }
     ]
 

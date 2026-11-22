@@ -110,7 +110,7 @@ export function LimiterPage(){
       <Group gap="xs" wrap="nowrap"><Text visibleFrom="sm" size="xs" c="dimmed">{expanded.has(event.id)?'Свернуть':'Подробнее'}</Text>{expanded.has(event.id)?<TbChevronUp size={20}/>:<TbChevronDown size={20}/>}</Group>
      </Group>
     </UnstyledButton>
-    <Collapse in={expanded.has(event.id)} id={'event-'+event.id}><EventDetails event={event}/></Collapse>
+    <div id={'event-'+event.id}><Collapse in={expanded.has(event.id)}><EventDetails event={event}/></Collapse></div>
     <Stack gap="xs" mt="md">{actionsFor(event)}
      {event.last_action&&<Text size="xs" c={event.last_action.success?'dimmed':'red'}>Последнее действие: {actionTitles[event.last_action.action]??event.last_action.action} · {sourceTitles[event.last_action.source]??event.last_action.source} · {dateText(event.last_action.createdAt)}{!event.last_action.success?' · Ошибка':''}</Text>}
      {!event.stateAvailable&&<Text size="xs" c="orange">Текущее состояние исключений и сроков недоступно. Обновите данные перед действием.</Text>}
