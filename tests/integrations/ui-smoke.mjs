@@ -167,7 +167,7 @@ try {
   await visible(page.getByText('IP записи vpn.example.com изменён', { exact: true }));
   const change = calls.find(call => call.pathname === '/api/cloudflare-dns/records/replace-ip');
   assert.deepEqual(change.body, { accountId: accountA, zoneId, recordId, expectedOldIp: '192.0.2.10', newIp: '192.0.2.20' });
-  await page.getByRole('link', { name: 'Настройки', exact: true }).click();
+  await page.locator('a[href="/dashboard/tools/cloudflare-dns/settings"]').click();
   await visible(page.getByRole('heading', { name: 'Настройки Cloudflare', exact: true }));
   await page.getByRole('button', { name: 'Добавить аккаунт', exact: true }).click();
   await page.getByLabel(/^Название аккаунта(?:\s*\*)?$/).fill('Третий аккаунт');
@@ -192,7 +192,7 @@ try {
   assert.equal(ignore.body.action, 'ignore_temp');
   assert.equal(ignore.body.minutes, 360);
   assert.match(ignore.body.requestId, /^[a-f\d-]{36}$/i);
-  await page.getByRole('link', { name: 'Настройки', exact: true }).click();
+  await page.locator('a[href="/dashboard/tools/limiter/settings"]').click();
   await visible(page.getByRole('heading', { name: 'Настройки Limiter', exact: true }));
   await visible(page.getByLabel('Режим', { exact: true }));
   await capture('limiter-settings-desktop');
