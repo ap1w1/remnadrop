@@ -21,6 +21,7 @@ export function DpiCheckerPage(){
  const [nodeUuid,setNodeUuid]=useState<string|null>(null),[allNodeHosts,setAllNodeHosts]=useState(true)
  const [location,setLocation]=useState<string|null>('russia'),[optimal,setOptimal]=useState(true)
  const [pops,setPops]=useState<Pop[]>([]),[popIds,setPopIds]=useState<string[]>([]),[jobs,setJobs]=useState<Job[]>([]),[details,setDetails]=useState<Job|null>(null)
+ const [recordExpenses,setRecordExpenses]=useState<boolean|null>(null),[billingBusy,setBillingBusy]=useState(false)
  const [busy,setBusy]=useState(false),[keyBusy,setKeyBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
  const refresh=useCallback(async()=>{
    const [configuration,history]=await Promise.all([instance.get('/api/dpi-checker/settings'),instance.get('/api/dpi-checker/checks')])
@@ -29,6 +30,8 @@ export function DpiCheckerPage(){
  },[])
  useEffect(()=>{let mounted=true;void Promise.all([refresh(),instance.get('/api/dpi-checker/host-options')]).then(([,r])=>{if(mounted){setHosts(r.data.response.hosts);setNodes(r.data.response.nodes)}}).catch(e=>{if(mounted)setError(getError(e))});return()=>{mounted=false}},[refresh])
  useEffect(()=>{const timer=window.setInterval(()=>void refresh().catch(()=>{}),15000);return()=>window.clearInterval(timer)},[refresh])
+ useEffect(()=>{void instance.get('/api/dpi-checker/billing-settings').then(res=>setRecordExpenses(res.data.response.enabled)).catch(()=>setRecordExpenses(null))},[])
+ const updateBilling=async(enabled:boolean)=>{setBillingBusy(true);setError('');try{const result=await instance.put('/api/dpi-checker/billing-settings',{enabled});setRecordExpenses(result.data.response.enabled);setNotice(enabled?'Новые расходы DPI Checker будут записываться в инфра-биллинг':'Учёт новых расходов DPI Checker выключен')}catch(error){setError(getError(error))}finally{setBillingBusy(false)}}
  useEffect(()=>{if(optimal||!location)return;let active=true;void instance.get('/api/dpi-checker/pops',{params:{location}}).then(r=>{if(active){const data=r.data.response;setPops(Array.isArray(data)?data:Array.isArray(data?.pops)?data.pops:[]);setPopIds([])}}).catch(e=>{if(active)setError(getError(e))});return()=>{active=false}},[location,optimal])
  const saveKey=async()=>{setKeyBusy(true);setError('');try{await instance.put('/api/dpi-checker/settings',{apiKey});setApiKey('');await refresh();setNotice('API-ключ успешно проверен и сохранён на сервере.')}catch(e){setError(getError(e))}finally{setKeyBusy(false)}}
  const eligibleHosts=hosts.filter(h=>!h.isDisabled&&!!h.inboundUuid&&(!nodeUuid||h.nodeUuids.includes(nodeUuid)))
@@ -63,7 +66,11 @@ export function DpiCheckerPage(){
       </Stack></Card>
       <Card withBorder radius="md" padding="lg"><Stack gap="md"><Group gap="xs"><TbCoin size={20}/><Text fw={600}>Баланс DPI Checker</Text></Group><Title order={1} c={balance===null?'dimmed':undefined}>
         {balance===null?'—':<NumberFormatter value={balance} decimalScale={2} fixedDecimalScale thousandSeparator=" " prefix="$"/>}
-      </Title><Text c="dimmed" size="sm">{balance===null?'Не удалось получить баланс. Проверьте ключ и подключение.':'Актуальный баланс аккаунта по данным API /profile'}</Text><Text size="xs" c="dimmed">Проверки платные. Стоимость рассчитывается автоматически при запуске.</Text></Stack></Card>
+      </Title><Text c="dimmed" size="sm">{balance===null?'Не удалось получить баланс. Проверьте ключ и подключение.':'Актуальный баланс аккаунта по данным API /profile'}</Text><Switch label="Записывать траты в инфра-биллинг"
+         description="При включении автоматически создаётся провайдер DPI//CHECKER. Фактические расходы новых проверок записываются один раз, без задвоения."
+         disabled={recordExpenses===null||billingBusy} checked={recordExpenses===true}
+         onChange={event=>void updateBilling(event.currentTarget.checked)}/>
+       <Text size="xs" c="dimmed">Проверки платные. Стоимость рассчитывается автоматически при запуске.</Text></Stack></Card>
     </SimpleGrid>
     <Card withBorder radius="md" padding="lg"><Stack gap="md"><Group gap="xs"><TbShieldSearch size={20}/><Title order={4}>Новая проверка</Title></Group>
       <Select label="Нода для проверки" searchable clearable placeholder="Все ноды · выбрать хосты вручную"
