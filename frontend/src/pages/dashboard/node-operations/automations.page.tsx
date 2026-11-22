@@ -24,6 +24,7 @@ const templates = [
     { id: 'offline', title: 'Резервный IP', description: 'Переключить недоступную ноду на запасной адрес', icon: TbRoute },
     { id: 'diagnostic', title: 'Проверка при падении', description: 'Проверить доступность хостов при снижении онлайна', icon: TbShieldCheck },
     { id: 'dns', title: 'IP домена', description: 'Изменить выбранную DNS-запись Cloudflare', icon: TbCloud },
+    { id: 'dpi-failover', title: 'DPI → резервный IP', description: 'Измерить доступность, дождаться результата и переключить только при недоступности в нескольких регионах', icon: TbShieldCheck },
 ] as const
 
 function statusBadge(status?: string | null) {
@@ -90,7 +91,7 @@ export function AutomationsPage() {
     useEffect(() => {
         const timer = setInterval(() => {
             void loadRules().catch(() => undefined)
-            if (tab === 'history' && executions.some(execution => execution.status === 'running') && executions.length <= PAGE_SIZE) void loadHistory()
+            if (tab === 'history' && executions.some(execution => ['running','waiting_dpi'].includes(execution.status)) && executions.length <= PAGE_SIZE) void loadHistory()
         }, 15000)
         return () => clearInterval(timer)
     }, [loadRules, loadHistory, tab, executions])
@@ -115,6 +116,10 @@ export function AutomationsPage() {
         const initial = rule ? toInput(rule) : freshAutomation()
         if (template === 'offline') Object.assign(initial, { name: 'Резервный IP ноды', trigger_type: 'node_offline', actions: [{ type: 'rotate_ip', updateCloudflare: false }] })
         if (template === 'diagnostic') Object.assign(initial, { name: 'Проверка при падении онлайна', actions: [{ type: 'dpi_check', hosts: [], location: 'russia' }] })
+        if (template === 'dpi-failover') Object.assign(initial, {name:'DPI-failover ноды',trigger_type:'online_drop',actions:[
+            {type:'dpi_check',hosts:[],location:'russia',locations:[{location:'russia'},{location:'russia_mobile'}],gate:{minUnavailableRegions:2,timeoutMinutes:15}},
+            {type:'rotate_ip',when:'dpi_unavailable',updateCloudflare:true},
+        ]})
         if (template === 'dns') Object.assign(initial, { name: 'Изменение IP домена', trigger_type: 'manual', actions: [{ type: 'cloudflare_dns', accountId: '', zoneId: '', recordId: '', ipSource: 'static', newIp: '' }] })
         setDraft(initial); setEditingId(rule?.id ?? null); setInitialStep(0); setBuilderOpen(true)
     }
@@ -189,11 +194,11 @@ export function AutomationsPage() {
                     <Text c="dimmed" size="sm" ta="center" maw={440}>Выберите условие, добавьте действия и проверьте сценарий перед включением.</Text>
                     <Button mt="sm" h={44} leftSection={<TbPlus size={18} />} onClick={() => openBuilder()}>Новая автоматизация</Button>
                 </Stack></Card> : !visibleRules.length ? <Card withBorder radius="md" p="xl"><Text ta="center" c="dimmed">По выбранным фильтрам правил нет</Text><Group justify="center" mt="md"><Button variant="light" onClick={() => { setSearch(''); setStateFilter('all'); setNodeFilter(null) }}>Сбросить фильтры</Button></Group></Card> : visibleRules.map(rule => {
-                    const running = !!rule.active_execution_id && !!rule.execution_lease_until && new Date(rule.execution_lease_until).getTime() > Date.now()
+                    const running = !!rule.active_execution_id
                     return <Card key={rule.id} withBorder radius="md" p="lg" className={`${classes.rule} ${!rule.enabled ? classes.paused : ''}`}>
                         <div className={classes.ruleBody}>
                             <div><Group gap="sm"><Text fw={700}>{rule.name}</Text>
-                                <Badge variant="light" color={running ? 'blue' : rule.trigger_type === 'manual' ? 'violet' : rule.enabled ? 'teal' : 'gray'}>{running ? 'Выполняется' : rule.trigger_type === 'manual' ? 'Ручное правило' : rule.enabled ? 'Включено' : 'На паузе'}</Badge>
+                                <Badge variant="light" color={running ? 'blue' : rule.trigger_type === 'manual' ? 'violet' : rule.enabled ? 'teal' : 'gray'}>{running ? (rule.last_status === 'waiting_dpi' ? 'Ожидает DPI' : 'Выполняется') : rule.trigger_type === 'manual' ? 'Ручное правило' : rule.enabled ? 'Включено' : 'На паузе'}</Badge>
                                 {rule.pending_since && !running && rule.enabled && <Badge variant="light" color="orange">Подтверждение условия</Badge>}</Group>
                                 <Text size="sm" c="dimmed" mt={6}>{triggerSummary(rule)}{rule.node_name ? ` · ${rule.node_name}` : ''}</Text>
                             </div>
@@ -216,7 +221,7 @@ export function AutomationsPage() {
                             <Text size="xs" c="dimmed">При ошибке: {rule.failure_policy === 'stop' ? 'остановить сценарий' : 'продолжить'}</Text></Group>
                     </Card>
                 })}
-                <div><Text size="sm" fw={600} mt="md" mb="sm">Начать с шаблона</Text><SimpleGrid cols={{ base: 1, sm: 3 }}>{templates.map(template => <UnstyledButton key={template.id} className={classes.template} onClick={() => openBuilder(undefined, template.id)}>
+                <div><Text size="sm" fw={600} mt="md" mb="sm">Начать с шаблона</Text><SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>{templates.map(template => <UnstyledButton key={template.id} className={classes.template} onClick={() => openBuilder(undefined, template.id)}>
                     <Group gap="sm" mb="xs"><template.icon size={21} /><Text fw={600} size="sm">{template.title}</Text></Group><Text size="xs" c="dimmed">{template.description}</Text>
                 </UnstyledButton>)}</SimpleGrid></div>
             </Stack></Tabs.Panel>
@@ -231,7 +236,7 @@ export function AutomationsPage() {
                         <Accordion.Panel><Stack gap="sm">
                             {execution.trigger_snapshot?.reason && <Text size="sm" c="dimmed">Условие: {execution.trigger_snapshot.reason}</Text>}
                             {(Array.isArray(execution.details) ? execution.details : []).map((detail, index) => <Card key={index} withBorder radius="md" p="sm"><Group wrap="nowrap" align="flex-start" gap="sm"><span className={classes.stepIndex}>{index + 1}</span><div style={{ minWidth: 0 }}>
-                                <Group gap="sm"><Text size="sm" fw={600}>{detail.title || actionLabels[detail.type as keyof typeof actionLabels] || 'Действие'}</Text><Badge size="xs" color={detail.status === 'skipped' ? 'gray' : detail.success ? 'teal' : 'red'}>{detail.status === 'skipped' ? 'Пропущено' : detail.success ? 'Выполнено' : 'Ошибка'}</Badge></Group>
+                                <Group gap="sm"><Text size="sm" fw={600}>{detail.title || actionLabels[detail.type as keyof typeof actionLabels] || 'Действие'}</Text><Badge size="xs" color={detail.status === 'pending' ? 'violet' : detail.status === 'skipped' ? 'gray' : detail.success ? 'teal' : 'red'}>{detail.status === 'pending' ? 'Ожидание DPI' : detail.status === 'skipped' ? 'Пропущено' : detail.success ? 'Выполнено' : 'Ошибка'}</Badge></Group>
                                 <Text size="sm" mt={4} className={classes.detailMessage}>{detail.message}</Text>
                             </div></Group></Card>)}
                             {!execution.details?.length && <Text size="sm" c="dimmed">Первое действие ещё выполняется</Text>}
