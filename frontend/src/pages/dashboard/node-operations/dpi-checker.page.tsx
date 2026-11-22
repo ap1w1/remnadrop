@@ -19,7 +19,7 @@ export function DpiCheckerPage(){
  const [settings,setSettings]=useState<Setting|null>(null),[balance,setBalance]=useState<number|null>(null),[apiKey,setApiKey]=useState('')
  const [hosts,setHosts]=useState<Host[]>([]),[nodes,setNodes]=useState<NodeOptionData[]>([]),[selected,setSelected]=useState<string[]>([])
  const [nodeUuid,setNodeUuid]=useState<string|null>(null),[allNodeHosts,setAllNodeHosts]=useState(true)
- [location,setLocation]=useState<string|null>('russia'),[optimal,setOptimal]=useState(true)
+ const [location,setLocation]=useState<string|null>('russia'),[optimal,setOptimal]=useState(true)
  const [pops,setPops]=useState<Pop[]>([]),[popIds,setPopIds]=useState<string[]>([]),[jobs,setJobs]=useState<Job[]>([]),[details,setDetails]=useState<Job|null>(null)
  const [busy,setBusy]=useState(false),[keyBusy,setKeyBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
  const refresh=useCallback(async()=>{
