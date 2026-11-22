@@ -1,60 +1,90 @@
-# RemnaDrop 2.8.1: Limiter + Cloudflare DNS
+# Limiter 5.1.0 + Cloudflare DNS в RemnaDrop 2.8.1
 
-**Статус:** экспериментальная интеграция, feature branch. Не разворачивать на рабочей панели до прохождения CI и тестов на копии PostgreSQL.
+> Статус: **черновой PR**, на рабочую панель не устанавливать до успешной сборки и интеграционных испытаний на клоне PostgreSQL.
 
-## Limiter (Инструменты → Limiter)
+## Почему 5.1.0 и что адаптировано
 
-Нативный монитор NestJS использует API/очереди Remnawave 2.8.1 через `NodesQueuesService.queryUsersIpsList` и `getUsersIpsListResult`: тот же маршрут `fetch-users-ips`, что используется в исходном [remnawave-limiter 3.0.0](https://github.com/syvlech/remnawave-limiter/tree/3.0.0).
+Remnawave Limiter **5.1.0** (релиз 2026-11-20, upstream commit `b422f430de562d1fe48b417e0431b934f53495be`) работает с API Remnawave 3.x, а RemnaDrop сохраняет API 2.8.1.
 
-В интерфейсе можно включить проверки, выбрать ручное предупреждение без блокировки или автоматическое отключение через UsersService. Настраиваются HWID fallback, допуск, число повторений, окно активности IP, cooldown, исключения нод/пользователей/IP и группировка IPv4 по /24. Журнал `limiter_events` хранит время, пользователя, IP и ноды. По умолчанию всё выключено, `manual`.
+Не нужно возвращаться к устаревшему Limiter 3.0.0 или переписывать все его функции. В каталоге `integrations/limiter-5.1` используется **оригинальный Go-бинарник версии 5.1.0**, без изменений. Встроенный в backend API-адаптер `/api/limiter-bridge` транслирует запросы нового клиента к ресурсам RemnaDrop 2.8.1:
 
-**Отличия от upstream Go 3.0.0:** эта версия НЕ включает Telegram inline-кнопки, MaxMind ASN, полноценные CIDR исключения, отдельный Redis state, штатные upstream Telegram /stats /settings и отчёты. Возможен бесплатный вариант без Telegram; опциональные текстовые уведомления требуют переменных `LIMITER_TELEGRAM_BOT_TOKEN` и `LIMITER_TELEGRAM_CHAT_ID`.
+| API Limiter 5.1.0 | Источник данных RemnaDrop 2.8.1 |
+|---|---|
+| `GET /api/nodes` | БД `nodes` |
+| `POST /api/connections/by-node/:uuid` и `GET /api/connections/by-node/:jobId` | `NodesQueuesService.queryUsersIpsList` / `getUsersIpsListResult` |
+| `GET /api/users/:numericId` | `users.t_id`, `internal_squad_members` |
+| `POST /api/users/:numericId/actions/disable|enable` | `UsersService.disableUser / enableUser` через UUID |
+| `POST /api/connections/drop` | `NodesQueuesService.dropUsersConnections` на подключённых нодах |
+| `GET /api/hwid/devices` и `GET /api/hwid/devices/:numericId` | `hwid_user_devices` с фильтрацией по HWID |
+| `GET /api/users/:numericId/subscription-request-history` | `user_subscription_request_history` |
+| `POST /api/bandwidth-stats/nodes/usage` | `nodes_user_usage_history` по дате, ноде, пользователю |
 
-При отсутствии ответа хотя бы одной включённой ноды в текущем цикле автоматическое применение блокировок отменяется, чтобы не ошибиться на неполных данных. Для автоматического режима обязательны тесты с динамическими / NAT клиентами. Действия Limiter не управляют внутренними ограничениями сквадов — меняют только глобальный статус подписки.
+В результате сохраняется логика исходного 5.1.0: группировка IP/подсетей/ASN, предупреждения, временные блокировки и автовосстановление, Telegram rich-уведомления с кнопками, статистика, обнаружение трафиковых аномалий и повторных пробных подписок по общему HWID.
 
-API (только JWT администратор):
-- `GET /api/limiter/settings` — настройки и последняя проверка
-- `PUT /api/limiter/settings` — изменить настройки
-- `GET /api/limiter/events` — последние 250 событий
-- `POST /api/limiter/ignore/{userUuid}` и `POST /api/limiter/unignore/{userUuid}`
+**Вкладка «Инструменты → Limiter»** меняет штатные параметры upstream. Отдельный `supervisor.py` опрашивает `GET /api/limiter-bridge/runtime` каждые 30 секунд, перезапускает Go-процесс при изменениях, сохраняет Redis-данные в томе. Пока `enabled=false`, Go-процесс не запускается. При пропадании панели более чем на 60 секунд процесс останавливается (fail-closed). Никакого `docker.sock` и privileged-контейнеров не требуется.
 
-## Cloudflare DNS (Инструменты → Cloudflare DNS)
+Секретные настройки Telegram и MaxMind вносятся на этой же странице; AES-256-GCM с постоянным `REMNADROP_LIMITER_ENCRYPTION_KEY`, 32+ символа. Секреты **не возвращаются браузеру**. Если в БД они не настроены, допускается заполнить переменные в `.env.limiter` на сервере.
 
-**Токен:** создать Cloudflare scoped API Token с правами **Zone:Read, DNS:Read, DNS:Edit** только для нужных зон. Вставить в UI, хранится AES-256-GCM в PostgreSQL. Для расшифровки задайте постоянную секретную переменную на сервере `CLOUDFLARE_DNS_ENCRYPTION_KEY` длиной от 32 символов (лучше случайные 48+ символов). Не размещайте токен в UI логах, Git или URL. Секрет должен совпадать у всех инстансов панели.
+### Как подключить отдельный Limiter после прохождения тестов
 
-В UI перечислены зоны и A/AAAA/CNAME, вычисляются связи по address/host/SNI в хостах Remnawave с соответствующими нодами, включая CNAME цепочки до 6 переходов. Для хостов с IP вместо имени можно использовать кнопку ручной привязки DNS-записи к конкретному хосту. Можно задать и отредактировать Zone ID (проверяется через API).
+1. Получить изменения из PR и обновить **тестовую**, а не производственную панель. Убедиться, что миграция создала таблицы `limiter_settings`, `limiter_credentials`, `limiter_events`.
+2. В среде панели задать постоянные `REMNADROP_LIMITER_BRIDGE_TOKEN` и `REMNADROP_LIMITER_WEBHOOK_SECRET` (каждый 32+ символа). **Те же значения** прописать в `integrations/limiter-5.1/.env.limiter`. Секреты генерируются отдельно:
+   ```bash
+   openssl rand -hex 32
+   openssl rand -hex 32
+   openssl rand -hex 32
+   ```
+3. Задать `REMNADROP_LIMITER_ENCRYPTION_KEY` в панели (третий секрет, при необходимости) и сохранить Telegram Bot Token / Chat ID / Admin IDs через UI. Можно также указать MaxMind ключ и UUID сквадов.
+4. Убедиться, что панель подключена к Docker-сети `remnawave-network`, hostname `remnawave` доступен внутри сети на порту 3000, и настройки не раскрыты через внешние endpoints.
+5. Из корня репозитория (сборка Dockerfile использует контекст корня):
+   ```bash
+   cd /opt/remnadrop-git
+   cp integrations/limiter-5.1/.env.limiter.example integrations/limiter-5.1/.env.limiter
+   chmod 600 integrations/limiter-5.1/.env.limiter
+   # отредактировать .env.limiter и поместить в безопасное хранилище
+   docker compose -f integrations/limiter-5.1/docker-compose.yml up -d --build
+   ```
+6. Проверить логи `docker logs --tail 100 remnadrop-limiter`, затем в UI включить Limiter **в ручном режиме**. Telegram-уведомления проверить на тестовых подписках. Только после проверки решать об автоматических блокировках.
 
-Автоматическая синхронизация требует **двух независимых включений**: флаг `auto_sync` для зоны в Cloudflare DNS и опция `После смены IP обновлять Cloudflare DNS` в правиле автоматизации действия `rotate_ip`. Будут изменяться только A-записи, уже содержащие старый IP, связаные с хостами данной ноды. Новая запись не создаётся, соседние домены не затрагиваются. При ошибке Cloudflare изменение IP на ноде не откатывается, а в истории появится partial_failure.
+**Важно:** команда `remnadrop update` не запускает отдельный Compose для Limiter. Запуск указан отдельно, чтобы установка обновления панели не создавала новый сервис с произвольными настройками. На VPS должно быть достаточно свободного места для образов и резервного копирования.
 
-Административные API (JWT):
-- `GET /api/cloudflare-dns/overview` — зоны, записи, связанные хосты/ноды
-- `GET /api/cloudflare-dns/settings` и `PUT /api/cloudflare-dns/settings` с `{ "apiToken": "..." }`
-- `PUT /api/cloudflare-dns/zones` с `{ "domain": "example.com", "zoneId": "32_hex_chars", "autoSync": true }`
-- `GET /api/cloudflare-dns/links` и `PUT /api/cloudflare-dns/links` с `{ "zoneId": "...", "recordId": "...", "hostUuid": "..." }`
-- `DELETE /api/cloudflare-dns/links/{zoneId}/{recordId}/{hostUuid}`
-- `POST /api/cloudflare-dns/replace-ip` с `{ "zoneId": "...", "recordId": "...", "nodeUuid": "...", "expectedOldIp": "198.51.100.10", "newIp": "198.51.100.20" }` (адреса здесь примеры, не реальные IP)
-- `GET /api/cloudflare-dns/events` — история успешных/неуспешных замен
+### API и вебхуки Limiter
 
-**Входящий вебхук:** `POST /api/cloudflare-dns/webhook/node-ip-changed`, включается при наличии `CLOUDFLARE_DNS_INCOMING_SECRET` (не менее 32 символов). Требования: JSON тело `{ "eventId": "<uuid>", "nodeUuid": "<uuid>", "oldIp": "<oldIPv4>", "newIp": "<newIPv4>" }`, заголовки `X-Webhook-Event-Id: <eventId>`, `X-Webhook-Timestamp: <Unix seconds UTC>`, `X-Webhook-Signature: sha256=<hex>`, где HMAC-SHA256 считается от `timestamp + '.' + JSON.stringify(body)` с ключом `CLOUDFLARE_DNS_INCOMING_SECRET`. Допуск 5 минут. EventId защищает от повторной доставки. Для данного вебхука не нужен admin JWT, только HMAC; защитите URL сетевыми правилами.
+- `GET/PUT /api/limiter/settings` — параметры, `GET /api/limiter/events` — события нарушения лимитов.
+- `GET/PUT/DELETE /api/limiter/credentials` — статус и сохранение/сброс зашифрованных Telegram/MaxMind секретов.
+- `POST /api/limiter/ignore/:uuid`, `POST /api/limiter/unignore/:uuid` — исключения.
+- Внутренний `/api/limiter-bridge/*` принимает только Bearer `REMNADROP_LIMITER_BRIDGE_TOKEN`, который никогда не должен быть опубликован.
+- Исходный Go Limiter посылает событие в `POST /api/limiter-webhook`. Подпись `X-Signature-V2` = HMAC-SHA256(secret, `X-Timestamp + '.' + rawJSONBody`), срок 5 минут. Повторная доставка того же сообщения не дублирует запись. События о превышении сохраняются в PostgreSQL, а Telegram Rich-события трафика и HWID идут напрямую через upstream-бота.
 
-**Исходящий вебхук:** успешная замена IP отправляет `CLOUDFLARE_DNS_IP_UPDATED` на `CLOUDFLARE_DNS_WEBHOOK_URL` при заданном `CLOUDFLARE_DNS_WEBHOOK_SECRET` длиной 32+ символов; используется существующая защищённая функция `postSignedWebhook` с полями `X-Webhook-Event-Id`, `X-Webhook-Timestamp`, `X-Webhook-Signature` от `timestamp + '.' + body`. Необходим HTTPS endpoint с публичным IPv4; доставку надо контролировать по логам.
+### Проверки адаптера 5.1.0 на тестовом окружении
 
-## Метрика дисков
+- Все описанные API-операции на тестовой БД 2.8.1 с полями `t_id` и UUID, включая смену статусов и drop connections.
+- Негативные тесты: неверный Bridge Bearer, неверный HMAC, пустые и слишком большие массивы пользователей, старая подпись.
+- Два активных узла; недоступная нода; переподключение; ложные срабатывания NAT и IPv6.
+- Трафик за день, архив трафика, последние HWID и поиск совпадающего HWID; отчёт Telegram и buttons actions.
+- Обновление настроек из UI, криптография при рестарте, отсутствие секретов в логах, поведение при недоступной панели.
 
-`GET /api/remnadrop/disk-metrics` возвращает место на файловой системе контейнера панели (`/`), что на обычном Docker overlay соответствует лежащему под ним разделу хоста. Для **отдельных дисков** пробросьте каталоги в контейнер в режиме read-only, задайте `REMNADROP_DISK_PATHS=/,/mnt/data,...`; метрики read-only. Не пробрасывайте чувствительные директории (`/var/run/docker.sock`, PostgreSQL data) и не запускайте контейнер как privileged ради мониторинга.
+## Cloudflare DNS
 
-## Подготовка к запуску
+Раздел **Инструменты → Cloudflare DNS** содержит зашифрованный токен Cloudflare (нужны права Zone Read, DNS Read и DNS Edit), список зон, A/AAAA/CNAME записей, связи с хостами и нодами, включая поддомены и CNAME-цепочки. Для хостов, где вместо домена указан IP, предусмотрены **явные привязки DNS-записей к хостам**.
 
-1. Дождаться зелёной Docker CI сборки. Изменения пока в draft PR.
-2. Сохранить актуальный образ и дамп PostgreSQL 2.8.1, восстановить в изолированную тестовую БД.
-3. Выполнить миграцию только на тестовой БД и проверить оба модуля (по умолчанию отключены), маршруты и авторизацию.
-4. Проверить 2 ноды, пропуск при сбое одной ноды, ручной/автоматический Limiter и возврат после срока. НЕ тестировать автоблокировку на реальных клиентах.
-5. Cloudflare тесты: неверный token/zone, A/CNAME и IP-only хост, CAS mismatch старого IP, не связанная запись, таймштамп и HMAC неверные, повтор webhook, частичный сбой Cloudflare.
-6. Dashboard desktop/mobile, админские права, health и расход диска. На production требуется достаточный запас: для сборки, экспортов контейнера и тестового восстановления БД.
+Zone ID можно изменить; перед сохранением проверяется, что он принадлежит выбранной зоне. Изменение IP в отдельной A/AAAA-записи выполняется только если её текущее значение совпадает с ожидаемым старым IP, а запись связана с хостом указанной ноды. Прокси-флаг, TTL и остальные поля сохраняются.
 
-### Внешние источники
+**Автоматизация после ротации IP** требует одновременно включить `auto_sync` на зоне и `updateCloudflare` в действии `rotate_ip`. Обновляются только соответствующие A-записи со старым IP; если Cloudflare недоступен, автоматизация фиксирует `partial_failure`, уже выполненная ротация IP ноды не откатывается.
 
-- https://github.com/syvlech/remnawave-limiter/tree/3.0.0
-- https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/edit/
+- `GET /api/cloudflare-dns/overview`, `GET /api/cloudflare-dns/events`
+- `GET/PUT/DELETE /api/cloudflare-dns/settings`: API Token
+- `PUT /api/cloudflare-dns/zones`: `{domain,zoneId,autoSync}`
+- `GET/PUT/DELETE /api/cloudflare-dns/links` — ручные связи DNS/хост
+- `POST /api/cloudflare-dns/replace-ip`: `{zoneId,recordId,nodeUuid,expectedOldIp,newIp}`
+- `POST /api/cloudflare-dns/webhook/node-ip-changed` — входящий подписанный запрос с `eventId,nodeUuid,oldIp,newIp`; `X-Webhook-Timestamp`, `X-Webhook-Event-Id`, `X-Webhook-Signature`, секрет `CLOUDFLARE_DNS_INCOMING_SECRET`.
+- Исходящий `CLOUDFLARE_DNS_IP_UPDATED` отправляется на `CLOUDFLARE_DNS_WEBHOOK_URL` при наличии `CLOUDFLARE_DNS_WEBHOOK_SECRET`.
 
-Обратите внимание на GPLv3 upstream при использовании или переносе его исходных файлов. Эта реализация написана отдельно для 2.8.1, полный исходный Go проект в форк не добавлен.
+## Диски и шапка
+
+`GET /api/remnadrop/disk-metrics` использует `statfs` для файловой системы контейнера (обычно тот же backing disk хоста). Дополнительные диски доступны при read-only mount в контейнер и заданном `REMNADROP_DISK_PATHS=/,/mnt/data,...`. На главной: всего / свободно, процент занятости, предупреждения 85/95%. Кнопка доната показывает надпись только на desktop, Telegram ведёт на https://t.me/remnadrop.
+
+## Источники
+
+- Upstream Limiter 5.1.0: https://github.com/syvlech/remnawave-limiter/releases/tag/5.1.0
+- Cloudflare DNS API: https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/edit/
