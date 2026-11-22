@@ -62,7 +62,8 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
     }finally{client.disconnect();}
   }
   private environment(settings:Record<string,string>):NodeJS.ProcessEnv{
-    const env:NodeJS.ProcessEnv={...process.env};
+    // Do not inherit PostgreSQL, Cloudflare, JWT or panel secrets in the Go process.
+    const env:NodeJS.ProcessEnv={PATH:process.env.PATH,HOME:this.dir,TMPDIR:'/tmp'};
     for(const [key,value] of Object.entries(settings)){
       if(!/^[A-Z_][A-Z0-9_]*$/.test(key)||typeof value!=='string')throw new Error('Invalid Limiter environment');
       env[key]=value;
@@ -99,7 +100,7 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
       mkdirSync(join(this.dir,'geoip'),{recursive:true});
       if(this.child)await this.stop();
       this.logger.log('Starting embedded upstream Limiter 5.1.0');
-      const child=spawn(this.binary,[],{cwd:this.dir,env,stdio:['ignore','pipe','pipe'],windowsHide:true});
+      const child=spawn(this.binary,[],{cwd:this.dir,env,uid:10001,gid:10001,stdio:['ignore','pipe','pipe'],windowsHide:true});
       this.child=child;this.fingerprint=digest;
       child.once('error',(error)=>{
         if(this.child===child){this.fingerprint='';this.nextStartAt=Date.now()+30000;this.logger.error('Limiter child: '+error.message);}
