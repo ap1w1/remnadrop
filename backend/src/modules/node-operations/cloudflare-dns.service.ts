@@ -105,15 +105,17 @@ export class CloudflareDnsService {
    return {response:await this.bindings()};
  }
  private async links():Promise<Link[]>{
-   const rows=await this.db.$queryRaw<{host_uuid:string;remark:string;address:string;host:string|null;sni:string|null;node_uuid:string;node_name:string}[]>`
-     SELECT h.uuid AS host_uuid,h.remark,h.address,h.host,h.sni,n.uuid AS node_uuid,n.name AS node_name
+   const rows=await this.db.$queryRaw<{host_uuid:string;remark:string;address:string;node_uuid:string;node_name:string}[]>`
+     SELECT h.uuid AS host_uuid,h.remark,h.address,n.uuid AS node_uuid,n.name AS node_name
      FROM hosts h JOIN hosts_to_nodes hn ON hn.host_uuid=h.uuid
      JOIN nodes n ON n.uuid=hn.node_uuid
      WHERE NOT h.is_disabled`;
    const explicit=await this.db.$queryRaw<{host_uuid:string;zone_id:string;record_id:string}[]>`SELECT host_uuid,zone_id,record_id FROM cf_dns_record_host_links`;
    return rows.map(r=>({
      hostUuid:r.host_uuid,hostName:r.remark,nodeUuid:r.node_uuid,nodeName:r.node_name,
-     names:[...new Set([r.address,...(r.host?[r.host]:[]),...(r.sni?[r.sni]:[])].flatMap(namesFor))],
+     // Only the configured connect address (or explicit binding) is safe for DNS writes.
+     // TLS SNI and Host headers can be unrelated camouflage domains; never mutate those.
+     names:[...new Set(namesFor(r.address))],
      recordIds:explicit.filter(x=>x.host_uuid===r.host_uuid).map(x=>x.record_id)
    }));
  }
