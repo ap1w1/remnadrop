@@ -249,55 +249,44 @@ export const ViewUserModalContent = (props: IProps) => {
             )}
 
             {!isMobile && (
-                <Group align="flex-start" gap="md" grow={false} wrap="wrap">
-                    <MotionStack
-                        animate="visible"
-                        gap="md"
-                        initial="hidden"
-                        style={{ flex: '1 1 450px' }}
-                        variants={containerVariants}
-                    >
-                        <UserIdentificationCard
-                            cardVariants={cardVariants}
-                            lastConnectedNode={lastConnectedNode}
-                            motionWrapper={MotionWrapper}
-                            user={user}
-                        />
-                        <ContactInformationCard
-                            cardVariants={cardVariants}
-                            form={form}
-                            motionWrapper={MotionWrapper}
-                        />
-                        <DeviceTagSettingsCard
-                            cardVariants={cardVariants}
-                            form={form}
-                            motionWrapper={MotionWrapper}
-                            tags={tags}
-                        />
-                    </MotionStack>
-
-                    <MotionStack
-                        animate="visible"
-                        gap="md"
-                        initial="hidden"
-                        style={{ flex: '1 1 450px' }}
-                        variants={containerVariants}
-                    >
-                        <SquadQuotas userUuid={userUuid} />
-                        <TrafficLimitsCard
-                            cardVariants={cardVariants}
-                            form={form}
-                            motionWrapper={MotionWrapper}
-                        />
-                        <AccessSettingsCard
-                            cardVariants={cardVariants}
-                            externalSquads={externalSquads}
-                            form={form}
-                            internalSquads={internalSquads}
-                            motionWrapper={MotionWrapper}
-                        />
-                    </MotionStack>
-                </Group>
+                <MotionStack
+                    animate="visible"
+                    gap="md"
+                    initial="hidden"
+                    style={{ width: '100%', maxWidth: 960, margin: '0 auto', minWidth: 0 }}
+                    variants={containerVariants}
+                >
+                    <UserIdentificationCard
+                        cardVariants={cardVariants}
+                        lastConnectedNode={lastConnectedNode}
+                        motionWrapper={MotionWrapper}
+                        user={user}
+                    />
+                    <TrafficLimitsCard
+                        cardVariants={cardVariants}
+                        form={form}
+                        motionWrapper={MotionWrapper}
+                    />
+                    <SquadQuotas userUuid={userUuid} />
+                    <AccessSettingsCard
+                        cardVariants={cardVariants}
+                        externalSquads={externalSquads}
+                        form={form}
+                        internalSquads={internalSquads}
+                        motionWrapper={MotionWrapper}
+                    />
+                    <ContactInformationCard
+                        cardVariants={cardVariants}
+                        form={form}
+                        motionWrapper={MotionWrapper}
+                    />
+                    <DeviceTagSettingsCard
+                        cardVariants={cardVariants}
+                        form={form}
+                        motionWrapper={MotionWrapper}
+                        tags={tags}
+                    />
+                </MotionStack>
             )}
 
             <ModalFooter isMobile={isMobile}>
