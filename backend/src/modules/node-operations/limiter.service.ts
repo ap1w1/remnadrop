@@ -58,8 +58,10 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
  }
  async update(input:unknown){
    const current=(await this.settings()).response;
+   if(!input||typeof input!=='object'||Array.isArray(input))throw new BadRequestException('Invalid limiter settings');
+   const {lastScanAt,lastError,...saved}=current;
    const incoming=input as Partial<Settings>;
-   const config=normalizeSettings({...current,...incoming});
+   const config=normalizeSettings({...saved,...incoming});
    await this.db.$executeRaw\`UPDATE limiter_settings SET config=\${JSON.stringify(config)}::jsonb,updated_at=now(),last_error=NULL WHERE id=1\`;
    return this.settings();
  }
@@ -144,7 +146,7 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
            if(!byIp){byIp=new Map();entries.set(user.userId,byIp);}
            for(const ip of user.ips??[]){
              if(isIP(ip.ip)===0||state.ignoredIps.includes(ip.ip))continue;
-             const seen=Date.parse(ip.lastSeen);
+             const seen=new Date(ip.lastSeen).getTime();
              if(!Number.isFinite(seen)||Math.abs(Date.now()-seen)>state.activeWindowSeconds*1000)continue;
              byIp.set(ip.ip,{ip:ip.ip,nodeUuid:row.value.nodeUuid});
            }
