@@ -1,10 +1,13 @@
-export type AutomationAction =
-    | { type: 'dpi_check'; hosts: string[]; location: string; pop_ids?: number[] }
+export type DpiRegionSelection = {location:string;pop_ids?:number[]}
+export type AutomationAction = (
+    | { type: 'dpi_check'; hosts: string[]; location: string; pop_ids?: number[];
+        locations?: DpiRegionSelection[]; gate?: {minUnavailableRegions:number; timeoutMinutes:number} }
     | { type: 'hide_hosts' | 'show_hosts'; hosts: string[] }
     | { type: 'rotate_ip'; updateCloudflare?: boolean }
     | { type: 'webhook'; url: string }
     | { type: 'cloudflare_dns'; accountId: string; zoneId: string; recordId: string;
         ipSource: 'static' | 'rotated'; newIp?: string; expectedOldIp?: string; domain?: string }
+) & {when?:'always'|'dpi_unavailable'|'dpi_available'|'dpi_unknown'}
 
 export type AutomationInput = {
     name: string; node_uuid: string | null; enabled: boolean;
@@ -25,7 +28,7 @@ export type AutomationNode = { uuid: string; name: string; address?: string | nu
 export type CloudflareAccount = { id: string; name: string }
 export type ExecutionDetail = {
     index?: number; type: string; title?: string; success: boolean; status?: string;
-    message: string; startedAt?: string; finishedAt?: string
+    message: string; startedAt?: string; finishedAt?: string; outcome?:'unavailable'|'available'|'unknown'
 }
 export type AutomationExecution = {
     id: string; rule_id: string | null; name: string; node_name: string | null; source: string;
@@ -49,7 +52,7 @@ export const triggerLabels: Record<AutomationInput['trigger_type'], string> = {
     online_drop: 'Падение онлайна', online_value: 'Онлайн: больше, меньше или равен', node_offline: 'Нода недоступна', interval: 'По интервалу', manual: 'Вручную'
 }
 export const executionStatuses: Record<string, { label: string; color: string }> = {
-    running: { label: 'Выполняется', color: 'blue' }, completed: { label: 'Успешно', color: 'teal' },
+    running: { label: 'Выполняется', color: 'blue' }, waiting_dpi: {label:'Ожидание DPI', color:'violet'}, completed: { label: 'Успешно', color: 'teal' },
     partial_failure: { label: 'Частично выполнено', color: 'orange' }, failed: { label: 'Ошибка', color: 'red' }
 }
 export const freshAutomation = (): AutomationInput => ({
@@ -66,6 +69,7 @@ export function triggerSummary(rule: AutomationInput) {
 }
 export function actionSummary(action: AutomationAction) {
     if (action.type === 'cloudflare_dns') return `${action.domain || 'DNS-запись'} → ${action.ipSource === 'rotated' ? 'новый IP ноды' : action.newIp || 'новый IP'}`
+    if (action.type === 'dpi_check') return `DPI · ${action.hosts.length} хостов · ${action.locations?.length ?? 1} стран${action.gate ? ` · недоступно в ${action.gate.minUnavailableRegions}+ регионах` : ''}`
     if ('hosts' in action) return `${actionLabels[action.type]} · ${action.hosts.length}`
     if (action.type === 'webhook') { try { return `Вебхук · ${new URL(action.url).hostname}` } catch { return 'Вебхук' } }
     return actionLabels[action.type]
