@@ -149,7 +149,33 @@ const page = await context.newPage();
 page.on('pageerror', error => pageErrors.push(error.stack || error.message));
 page.setDefaultTimeout(12000);
 const visible = locator => locator.waitFor({ state: 'visible' });
-async function capture(name) { await page.screenshot({ path: join(output, name + '.png'), fullPage: true, animations: 'disabled' }); }
+async function capture(name, checkState) {
+  // Page fades in with Framer Motion. Capture its settled pixels as well as DOM
+  // evidence; visibility checks alone can precede the browser's final paint.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  await page.waitForFunction(() => {
+    let element = document.querySelector('main h1, main h2, main h3');
+    while (element && element.tagName !== 'MAIN') {
+      if (element instanceof HTMLElement && element.style.opacity !== '') {
+        if (Number(getComputedStyle(element).opacity) < 0.999) return false;
+      }
+      element = element.parentElement;
+    }
+    return true;
+  });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  if (checkState) await checkState();
+  const before = await page.locator('main').innerText();
+  await page.screenshot({ path: join(output, name + '.png'), fullPage: true, animations: 'disabled' });
+  if (checkState) await checkState();
+  const after = await page.locator('main').innerText();
+  await writeFile(join(output, name + '.json'), JSON.stringify({ url: page.url(), viewport: page.viewportSize(), before, after }, null, 2));
+}
+async function checkExpandedLimiterEvent() {
+  assert.equal(await page.getByRole('button', { name: /^114644/ }).getAttribute('aria-expanded'), 'true', 'The same event must stay expanded while capturing');
+  assert(await page.getByText('198.51.100.10', { exact: true }).first().isVisible());
+  assert.equal(await page.locator('main .mantine-Skeleton-root').count(), 0, 'A loaded event must not return to the initial skeleton');
+}
 async function noHorizontalOverflow() {
   const width = await page.evaluate(() => ({ content: document.documentElement.scrollWidth, viewport: window.innerWidth }));
   assert(width.content <= width.viewport + 1, `Horizontal page overflow: ${width.content} > ${width.viewport}`);
@@ -182,9 +208,9 @@ try {
   await visible(page.getByText('198.51.100.10', { exact: true }).first());
   await visible(page.getByText('Финляндия-2', { exact: true }).first());
   await visible(page.getByText('Уникальные IP', { exact: true }));
-  assert.equal(await page.getByLabel('Режим', { exact: true }).count(), 0, 'Settings must not replace the default event feed');
+  assert.equal(await page.getByRole('combobox', { name: 'Режим', exact: true }).count(), 0, 'Settings must not replace the default event feed');
   assert(!/NestJS|Docker-контейнер|Go Limiter 5\.1\.0|Встроенный Limiter 5\.1\.0/.test(await page.locator('body').innerText()));
-  await noHorizontalOverflow(); await capture('limiter-desktop');
+  await noHorizontalOverflow(); await capture('limiter-desktop', checkExpandedLimiterEvent);
   await page.getByRole('button', { name: 'Игнорировать 6 часов', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Подтвердить', exact: true }).click();
   await visible(page.getByText(/Действие выполнено:/));
@@ -194,7 +220,7 @@ try {
   assert.match(ignore.body.requestId, /^[a-f\d-]{36}$/i);
   await page.locator('a[href="/dashboard/tools/limiter/settings"]').click();
   await visible(page.getByRole('heading', { name: 'Настройки Limiter', exact: true }));
-  await visible(page.getByLabel('Режим', { exact: true }));
+  await visible(page.getByRole('combobox', { name: 'Режим', exact: true }));
   await capture('limiter-settings-desktop');
   await page.getByRole('tab', { name: 'Уведомления', exact: true }).click();
   const duplication = page.getByLabel('Дублировать события и действия в Telegram', { exact: true });
@@ -213,15 +239,15 @@ try {
   await noHorizontalOverflow(); await capture('automations-desktop');
   await page.getByRole('button', { name: 'Создать правило', exact: true }).click();
   await page.getByLabel(/^Название(?:\s*\*)?$/).fill('Проверка нового сценария');
-  await page.getByLabel('Когда запускать', { exact: true }).click();
+  await page.getByRole('combobox', { name: 'Когда запускать', exact: true }).click();
   await page.getByRole('option', { name: 'Вручную', exact: true }).click();
-  await page.getByLabel('Нода (если нужна для действий)', { exact: true }).click();
+  await page.getByRole('combobox', { name: 'Нода (если нужна для действий)', exact: true }).click();
   await page.getByRole('option', { name: 'Финляндия-2', exact: true }).click();
   await page.getByRole('button', { name: 'К действиям', exact: true }).click();
-  await page.getByLabel('Добавить действие', { exact: true }).click();
+  await page.getByRole('combobox', { name: 'Добавить действие', exact: true }).click();
   await page.getByRole('option', { name: 'Скрыть хосты', exact: true }).click();
   await page.getByRole('button', { name: 'Добавить', exact: true }).click();
-  await page.getByLabel('Хосты', { exact: true }).click();
+  await page.getByRole('combobox', { name: 'Хосты', exact: true }).click();
   await page.getByRole('option', { name: 'Финляндия', exact: true }).click();
   await page.getByRole('heading', { name: 'Что выполнить', exact: true }).click();
   const actionsBeforePreview = calls.filter(call => call.pathname.endsWith('/run') || call.pathname.endsWith('/records/replace-ip')).length;
@@ -260,8 +286,14 @@ try {
       await page.getByRole('button', { name: /^114644/ }).click();
       await visible(page.getByText('198.51.100.10', { exact: true }).first());
     }
-    if (name === 'cloudflare') await page.getByRole('button', { name: /example\.com/ }).click();
-    await noHorizontalOverflow(); await capture(name + '-mobile');
+    if (name === 'cloudflare') {
+      await page.getByRole('button', { name: /example\.com/ }).click();
+      await visible(page.getByText('vpn.example.com', { exact: true }).first());
+    }
+    if (name === 'limiter-settings') await visible(page.getByRole('combobox', { name: 'Режим', exact: true }));
+    if (name === 'cloudflare-settings') await visible(page.getByText('Третий аккаунт', { exact: true }));
+    if (name === 'automations') await visible(page.getByText('Резервный IP домена', { exact: true }));
+    await noHorizontalOverflow(); await capture(name + '-mobile', name === 'limiter' ? checkExpandedLimiterEvent : undefined);
   }
   assert.deepEqual(unexpected, [], 'Unexpected API/external requests');
   assert.deepEqual(pageErrors, [], 'Uncaught frontend errors');
