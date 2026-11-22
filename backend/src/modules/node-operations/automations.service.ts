@@ -564,6 +564,9 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
                 details=e.details || '[{"type":"execution","title":"Выполнение прервано","status":"failed","success":false,"message":"Процесс не завершил выполнение. Проверьте журнал перед повторным запуском."}]'::jsonb
                 FROM node_automation_rules r WHERE e.id=r.active_execution_id AND e.status='running' AND r.execution_lease_until<now()`;
             await this.resumeDpiGates();
+            await this.db.$executeRaw`UPDATE node_automation_rules r SET active_execution_id=NULL,execution_lease_until=NULL
+                WHERE r.active_execution_id IS NOT NULL AND r.execution_lease_until<now()
+                  AND NOT EXISTS (SELECT 1 FROM node_automation_executions e WHERE e.id=r.active_execution_id AND e.status IN ('running','waiting_dpi'))`;
             const rules = await this.db.$queryRaw<Rule[]>`SELECT * FROM node_automation_rules WHERE enabled AND trigger_type<>'manual' ORDER BY updated_at`;
             for (const rule of rules) {
                 try {
