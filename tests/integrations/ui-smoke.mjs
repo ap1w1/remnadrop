@@ -124,7 +124,7 @@ await context.route('**/*', async route => {
   else if (pathname === '/api/limiter/summary') result = { count24h: 3, countWeek: 7, users24h: 1, liveAvailable: true, live: { violations: { Count24h: 3, CountWeek: 7, Top: [] }, heavyTraffic: [], lastCheck: now } };
   else if (pathname === '/api/limiter/ignored' || pathname === '/api/limiter/actions') result = [];
   else if (/^\/api\/limiter\/users\/[^/]+\/actions$/.test(pathname)) result = { success: true, action: body.action, userId: 114644, state: limiterEvents[0].state };
-  else if (pathname === '/api/node-automations/options') result = { nodes: [{ uuid: nodeId, name: 'Финляндия-2' }], hosts: [{ uuid: hostId, remark: 'Финляндия', address: 'vpn.example.com', node_uuids: [nodeId], is_hidden: false }], dpiCostLimitUsd: 1 };
+  else if (pathname === '/api/node-automations/options') result = { nodes: [{ uuid: nodeId, name: 'Финляндия-2', countryCode: 'FI', address: '198.51.100.20' }], hosts: [{ uuid: hostId, remark: 'Финляндия', address: 'vpn.example.com', node_uuids: [nodeId], is_hidden: false }], dpiCostLimitUsd: 1 };
   else if (pathname === '/api/node-automations/executions') result = executions;
   else if (pathname === '/api/node-automations/preview') result = preview(body);
   else if (pathname === `/api/node-automations/${ruleId}/preview`) result = preview(rules[0]);
@@ -264,7 +264,7 @@ try {
   await page.getByRole('combobox', { name: 'Когда запускать', exact: true }).click();
   await page.getByRole('option', { name: 'Вручную', exact: true }).click();
   await page.getByRole('combobox', { name: 'Нода (если нужна для действий)', exact: true }).click();
-  await page.getByRole('option', { name: 'Финляндия-2', exact: true }).click();
+  await page.getByRole('option', { name: /Финляндия-2 · 198\.51\.100\.20/ }).click();
   await page.getByRole('button', { name: 'К действиям', exact: true }).click();
   await page.getByRole('combobox', { name: 'Добавить действие', exact: true }).click();
   await page.getByRole('option', { name: 'Скрыть хосты', exact: true }).click();
