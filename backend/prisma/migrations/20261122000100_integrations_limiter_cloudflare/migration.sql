@@ -25,6 +25,7 @@ CREATE TABLE limiter_events (
   observed_count integer NOT NULL,
   ips jsonb NOT NULL DEFAULT '[]'::jsonb,
   details text,
+  webhook_sha256 text UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX limiter_events_recent_idx ON limiter_events (created_at DESC);
