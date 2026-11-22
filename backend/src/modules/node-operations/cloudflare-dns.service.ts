@@ -26,7 +26,7 @@ export class CloudflareDnsService {
    return createHash('sha256').update('remnadrop-cloudflare-dns-v1\0').update(secret).digest();
  }
  private async token():Promise<string>{
-   const rows=await this.db.$queryRaw<{iv:Uint8Array;tag:Uint8Array;ciphertext:Uint8Array}[]>\`SELECT iv,tag,ciphertext FROM cf_dns_credentials WHERE id=1\`;
+   const rows=await this.db.$queryRaw<{iv:Uint8Array;tag:Uint8Array;ciphertext:Uint8Array}[]>`SELECT iv,tag,ciphertext FROM cf_dns_credentials WHERE id=1`;
    if(!rows.length){
      if(!process.env.CLOUDFLARE_DNS_API_TOKEN)throw new ServiceUnavailableException('Cloudflare DNS token is not configured');
      return process.env.CLOUDFLARE_DNS_API_TOKEN;
@@ -38,7 +38,7 @@ export class CloudflareDnsService {
    }catch{throw new ServiceUnavailableException('Cannot decrypt Cloudflare token. Check stable encryption key');}
  }
  async status(){
-   const rows=await this.db.$queryRaw<{updated_at:Date}[]>\`SELECT updated_at FROM cf_dns_credentials WHERE id=1\`;
+   const rows=await this.db.$queryRaw<{updated_at:Date}[]>`SELECT updated_at FROM cf_dns_credentials WHERE id=1`;
    return {response:{configured:rows.length>0||!!process.env.CLOUDFLARE_DNS_API_TOKEN,source:rows.length?'stored':process.env.CLOUDFLARE_DNS_API_TOKEN?'environment':'none',updatedAt:rows[0]?.updated_at??null}};
  }
  private async call<T>(token:string,path:string,init:RequestInit={}):Promise<T>{
@@ -64,12 +64,12 @@ export class CloudflareDnsService {
    const iv=randomBytes(12), cipher=createCipheriv('aes-256-gcm',this.encryptionKey(),iv);
    const data=Buffer.concat([cipher.update(token,'utf8'),cipher.final()]);
    const tag=cipher.getAuthTag();
-   await this.db.$executeRaw\`INSERT INTO cf_dns_credentials(id,iv,tag,ciphertext)
-     VALUES(1,\${iv},\${tag},\${data})
-     ON CONFLICT(id) DO UPDATE SET iv=EXCLUDED.iv,tag=EXCLUDED.tag,ciphertext=EXCLUDED.ciphertext,updated_at=now()\`;
+   await this.db.$executeRaw`INSERT INTO cf_dns_credentials(id,iv,tag,ciphertext)
+     VALUES(1,${iv},${tag},${data})
+     ON CONFLICT(id) DO UPDATE SET iv=EXCLUDED.iv,tag=EXCLUDED.tag,ciphertext=EXCLUDED.ciphertext,updated_at=now()`;
    return this.status();
  }
- async removeToken(){await this.db.$executeRaw\`DELETE FROM cf_dns_credentials WHERE id=1\`;return this.status();}
+ async removeToken(){await this.db.$executeRaw`DELETE FROM cf_dns_credentials WHERE id=1`;return this.status();}
  private async zones(token:string):Promise<Zone[]>{
    const all:Zone[]=[];
    for(let page=1;page<=10;page++){
@@ -93,23 +93,23 @@ export class CloudflareDnsService {
    }
    return all;
  }
- async bindings(){return this.db.$queryRaw<Binding[]>\`SELECT domain,zone_id,auto_sync FROM cf_dns_zone_bindings ORDER BY domain\`;}
+ async bindings(){return this.db.$queryRaw<Binding[]>`SELECT domain,zone_id,auto_sync FROM cf_dns_zone_bindings ORDER BY domain`;}
  async upsertBinding(domainInput:string,zoneId:string,autoSync:boolean){
    const domain=canonical(domainInput??'');
    if(!domainPattern.test(domain)||!hex32.test(zoneId)||typeof autoSync!=='boolean')throw new BadRequestException('Invalid domain, zone ID or auto-sync option');
    const zone=await this.zone(await this.token(),zoneId);
    if(canonical(zone.name)!==domain)throw new ConflictException('Zone ID belongs to another domain');
-   await this.db.$executeRaw\`INSERT INTO cf_dns_zone_bindings(domain,zone_id,auto_sync)
-     VALUES(\${domain},\${zoneId.toLowerCase()},\${autoSync})
-     ON CONFLICT(domain) DO UPDATE SET zone_id=excluded.zone_id,auto_sync=excluded.auto_sync,updated_at=now()\`;
+   await this.db.$executeRaw`INSERT INTO cf_dns_zone_bindings(domain,zone_id,auto_sync)
+     VALUES(${domain},${zoneId.toLowerCase()},${autoSync})
+     ON CONFLICT(domain) DO UPDATE SET zone_id=excluded.zone_id,auto_sync=excluded.auto_sync,updated_at=now()`;
    return {response:await this.bindings()};
  }
  private async links():Promise<Link[]>{
-   const rows=await this.db.$queryRaw<{host_uuid:string;remark:string;address:string;host:string|null;sni:string|null;node_uuid:string;node_name:string}[]>\`
+   const rows=await this.db.$queryRaw<{host_uuid:string;remark:string;address:string;host:string|null;sni:string|null;node_uuid:string;node_name:string}[]>`
      SELECT h.uuid AS host_uuid,h.remark,h.address,h.host,h.sni,n.uuid AS node_uuid,n.name AS node_name
      FROM hosts h JOIN hosts_to_nodes hn ON hn.host_uuid=h.uuid
      JOIN nodes n ON n.uuid=hn.node_uuid
-     WHERE NOT h.is_disabled\`;
+     WHERE NOT h.is_disabled`;
    const explicit=await this.db.$queryRaw<{host_uuid:string;zone_id:string;record_id:string}[]>`SELECT host_uuid,zone_id,record_id FROM cf_dns_record_host_links`;
    return rows.map(r=>({
      hostUuid:r.host_uuid,hostName:r.remark,nodeUuid:r.node_uuid,nodeName:r.node_name,
@@ -174,12 +174,12 @@ export class CloudflareDnsService {
  async explicitLinks(){
    return {response:await this.db.$queryRaw`SELECT zone_id,record_id,host_uuid FROM cf_dns_record_host_links`};
  }
- async events(){return {response:await this.db.$queryRaw\`
+ async events(){return {response:await this.db.$queryRaw`
    SELECT id,zone_id,record_id,record_name,node_uuid,old_ip::text,new_ip::text,source,status,message,created_at
-   FROM cf_dns_events ORDER BY created_at DESC LIMIT 200\`};}
+   FROM cf_dns_events ORDER BY created_at DESC LIMIT 200`};}
  private async log(input:{zoneId:string;recordId:string|null;recordName:string;nodeUuid:string|null;oldIp:string;newIp:string;source:string;status:string;message:string}){
-   await this.db.$executeRaw\`INSERT INTO cf_dns_events(zone_id,record_id,record_name,node_uuid,old_ip,new_ip,source,status,message)
-     VALUES(\${input.zoneId},\${input.recordId},\${input.recordName},\${input.nodeUuid}::uuid,\${input.oldIp}::inet,\${input.newIp}::inet,\${input.source},\${input.status},\${input.message})\`;
+   await this.db.$executeRaw`INSERT INTO cf_dns_events(zone_id,record_id,record_name,node_uuid,old_ip,new_ip,source,status,message)
+     VALUES(${input.zoneId},${input.recordId},${input.recordName},${input.nodeUuid}::uuid,${input.oldIp}::inet,${input.newIp}::inet,${input.source},${input.status},${input.message})`;
  }
  async replaceIp(input:{zoneId:string;recordId:string;nodeUuid:string;expectedOldIp:string;newIp:string;source?:string}){
    if(!hex32.test(input?.zoneId)||!hex32.test(input?.recordId)||!uuid.test(input?.nodeUuid)
