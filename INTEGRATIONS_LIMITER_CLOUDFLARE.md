@@ -4,7 +4,7 @@
 
 ## Почему 5.1.0 и что адаптировано
 
-Remnawave Limiter **5.1.0** (релиз 2026-11-20, upstream commit `b422f430de562d1fe48b417e0431b934f53495be`) работает с API Remnawave 3.x, а RemnaDrop сохраняет API 2.8.1.
+Remnawave Limiter **5.1.0** (релиз 2026-11-20, upstream commit `c5ce367c5f38a345fad59bb813fd9fd67c80a329`) работает с API Remnawave 3.x, а RemnaDrop сохраняет API 2.8.1.
 
 Не нужно возвращаться к устаревшему Limiter 3.0.0 или переписывать все его функции. В каталоге `integrations/limiter-5.1` используется **оригинальный Go-бинарник версии 5.1.0**, без изменений. Встроенный в backend API-адаптер `/api/limiter-bridge` транслирует запросы нового клиента к ресурсам RemnaDrop 2.8.1:
 
