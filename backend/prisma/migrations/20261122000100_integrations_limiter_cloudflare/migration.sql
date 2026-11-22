@@ -1,4 +1,4 @@
--- Opt-in limiter settings and audit trail; never auto-disable until configured.
+-- Upstream Limiter 5.1.0 settings and webhook audit; engine starts only when opt-in enabled.
 CREATE TABLE limiter_settings (
   id integer PRIMARY KEY DEFAULT 1 CHECK (id=1),
   config jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -8,13 +8,6 @@ CREATE TABLE limiter_settings (
 );
 INSERT INTO limiter_settings(id) VALUES (1) ON CONFLICT DO NOTHING;
 
-CREATE TABLE limiter_user_counters (
-  user_uuid uuid PRIMARY KEY REFERENCES users(uuid) ON DELETE CASCADE,
-  count integer NOT NULL DEFAULT 0,
-  window_start timestamptz NOT NULL DEFAULT now(),
-  last_detected_at timestamptz NOT NULL DEFAULT now(),
-  last_action_at timestamptz
-);
 CREATE TABLE limiter_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_uuid uuid REFERENCES users(uuid) ON DELETE SET NULL,
@@ -29,11 +22,6 @@ CREATE TABLE limiter_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX limiter_events_recent_idx ON limiter_events (created_at DESC);
-CREATE TABLE limiter_restores (
-  user_uuid uuid PRIMARY KEY REFERENCES users(uuid) ON DELETE CASCADE,
-  restore_at timestamptz NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
 
 -- Cloudflare credentials are AES-256-GCM encrypted with a stable server-side secret.
 CREATE TABLE cf_dns_credentials (
