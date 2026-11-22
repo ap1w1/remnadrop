@@ -6,7 +6,7 @@ import { postSignedWebhook } from '@modules/squad-quotas/quota-webhooks.service'
 
 type Zone = {id:string;name:string;status:string};
 type DnsRecord = {id:string;zone_id?:string;name:string;type:string;content:string;proxied?:boolean;ttl:number};
-type Link = {hostUuid:string;hostName:string;nodeUuid:string;nodeName:string;names:string[]};
+type Link = {hostUuid:string;hostName:string;nodeUuid:string;nodeName:string;names:string[];recordIds:string[]};
 type Binding = {domain:string;zone_id:string;auto_sync:boolean};
 const hex32=/^[0-9a-f]{32}$/i;
 const uuid=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -110,9 +110,11 @@ export class CloudflareDnsService {
      FROM hosts h JOIN hosts_to_nodes hn ON hn.host_uuid=h.uuid
      JOIN nodes n ON n.uuid=hn.node_uuid
      WHERE NOT h.is_disabled\`;
+   const explicit=await this.db.$queryRaw<{host_uuid:string;zone_id:string;record_id:string}[]>`SELECT host_uuid,zone_id,record_id FROM cf_dns_record_host_links`;
    return rows.map(r=>({
      hostUuid:r.host_uuid,hostName:r.remark,nodeUuid:r.node_uuid,nodeName:r.node_name,
-     names:[...new Set([r.address,...(r.host?[r.host]:[]),...(r.sni?[r.sni]:[])].flatMap(namesFor))]
+     names:[...new Set([r.address,...(r.host?[r.host]:[]),...(r.sni?[r.sni]:[])].flatMap(namesFor))],
+     recordIds:explicit.filter(x=>x.host_uuid===r.host_uuid).map(x=>x.record_id)
    }));
  }
  /** A host with CNAME alias is related to the terminal A/AAAA record too. */
@@ -131,7 +133,7 @@ export class CloudflareDnsService {
  }
  private connected(records:DnsRecord[],record:DnsRecord,links:Link[]):Link[]{
    const names=this.aliases(records,record);
-   return links.filter(l=>l.names.some(name=>names.has(name)));
+   return links.filter(l=>l.recordIds.includes(record.id)||l.names.some(name=>names.has(name)));
  }
  async overview(){
    const status=(await this.status()).response;
@@ -150,6 +152,27 @@ export class CloudflareDnsService {
      }catch(error){this.logger.warn('Cloudflare DNS zone query failed for '+zone.id)}
    }
    return {response:{status,zones,records:displayed,bindings}};
+ }
+ async bindHost(input:{zoneId:string;recordId:string;hostUuid:string}){
+   if(!hex32.test(input?.zoneId)||!hex32.test(input?.recordId)||!uuid.test(input?.hostUuid))
+     throw new BadRequestException('Invalid DNS record or host');
+   await this.call<DnsRecord>(await this.token(),'/zones/'+input.zoneId+'/dns_records/'+input.recordId);
+   const host=await this.db.hosts.findUnique({where:{uuid:input.hostUuid},select:{uuid:true}});
+   if(!host)throw new NotFoundException('Host not found');
+   await this.db.$executeRaw`INSERT INTO cf_dns_record_host_links(zone_id,record_id,host_uuid)
+     VALUES(${input.zoneId.toLowerCase()},${input.recordId.toLowerCase()},${input.hostUuid}::uuid)
+     ON CONFLICT DO NOTHING`;
+   return {response:{linked:true}};
+ }
+ async unbindHost(input:{zoneId:string;recordId:string;hostUuid:string}){
+   if(!hex32.test(input?.zoneId)||!hex32.test(input?.recordId)||!uuid.test(input?.hostUuid))
+     throw new BadRequestException('Invalid DNS record or host');
+   await this.db.$executeRaw`DELETE FROM cf_dns_record_host_links WHERE zone_id=${input.zoneId.toLowerCase()}
+     AND record_id=${input.recordId.toLowerCase()} AND host_uuid=${input.hostUuid}::uuid`;
+   return {response:{linked:false}};
+ }
+ async explicitLinks(){
+   return {response:await this.db.$queryRaw`SELECT zone_id,record_id,host_uuid FROM cf_dns_record_host_links`};
  }
  async events(){return {response:await this.db.$queryRaw\`
    SELECT id,zone_id,record_id,record_name,node_uuid,old_ip::text,new_ip::text,source,status,message,created_at
