@@ -38,7 +38,7 @@ export function NodeTopologyPage() {
             const profile=profiles.find(p=>p.uuid===profileUuid)
             if(!profileUuid)continue
             const profileId='profile:'+profileUuid
-            add({id:profileId,kind:'profile',label:profile?.name??'Профиль',detail:profileUuid})
+            add({id:profileId,kind:'profile',label:profile?.name??'Профиль',detail:'Профиль конфигурации'})
             link(nodeId,profileId)
             for(const inbound of node.configProfile.activeInbounds??[]){
                 const id='inbound:'+inbound.uuid
@@ -49,13 +49,13 @@ export function NodeTopologyPage() {
         }
         const search=query.trim().toLowerCase()
         const matchingHosts=hosts.filter(host=>
-            (includeDisabled||(!host.isDisabled&&!host.isHidden))
+            (includeDisabled||!host.isDisabled)
             && host.nodes.some(id=>chosen.has(id))
             && (!search||[host.remark,host.address,String(host.port)].join(' ').toLowerCase().includes(search)))
         // Do not silently drop hosts whose inbound is currently absent from the active profile.
         for(const host of matchingHosts){
             const id='host:'+host.uuid
-            add({id,kind:'host',label:host.remark||host.address,detail:host.address+':'+host.port,disabled:host.isDisabled})
+            add({id,kind:'host',label:host.remark||host.address,detail:host.address+':'+host.port,disabled:host.isDisabled,hidden:host.isHidden})
             const inboundId=host.inbound.configProfileInboundUuid
             if(inboundId&&inboundIds.has(inboundId)){
                 link('inbound:'+inboundId,id)
@@ -93,7 +93,7 @@ export function NodeTopologyPage() {
             </Group>
             <Group gap="sm" align="center" wrap="wrap">
                 <TextInput size="sm" style={{flex:'1 1 220px'}} placeholder="Найти хост по названию, IP или порту" aria-label="Поиск хостов" leftSection={<TbSearch size={15}/>} value={query} onChange={e=>setQuery(e.currentTarget.value)}/>
-                <Switch size="sm" checked={includeDisabled} onChange={e=>setIncludeDisabled(e.currentTarget.checked)} label="Скрытые и отключённые"/>
+                <Switch size="sm" checked={includeDisabled} onChange={e=>setIncludeDisabled(e.currentTarget.checked)} label="Показывать отключённые"/>
                 <Badge variant="light" color="gray">{visibleNodes.length} нод · {graph.hosts} хостов</Badge>
             </Group>
         </Stack></Card>
@@ -102,6 +102,6 @@ export function NodeTopologyPage() {
         !visibleNodes.length?<Alert color="blue">Выберите хотя бы одну ноду.</Alert>:
         <TopologyCanvas vertices={graph.vertices} edges={graph.edges}/>}
         {graph.hasMore&&<Alert color="yellow">Показаны первые 350 элементов. Сузьте список нод или выполните поиск по хостам.</Alert>}
-        <Text size="xs" c="dimmed">Все данные берутся из конфигурации панели. Хосты без активного inbound соединяются непосредственно с соответствующей нодой, поэтому не исчезают из схемы. Перемещение карточек не меняет конфигурацию.</Text>
+        <Text size="xs" c="dimmed">Все данные берутся из конфигурации панели. Скрытые хосты остаются на схеме с отдельным статусом. Хосты без активного inbound соединяются непосредственно с соответствующей нодой, поэтому не исчезают из схемы. Перемещение карточек не меняет конфигурацию.</Text>
     </Stack></Page>
 }
