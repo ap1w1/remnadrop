@@ -10,4 +10,5 @@ import { randomBytes } from 'node:crypto';
 export class LimiterBridgeSecretsService {
     readonly apiToken = randomBytes(32).toString('hex');
     readonly webhookSecret = randomBytes(32).toString('hex');
+    readonly controlToken = randomBytes(32).toString('hex');
 }

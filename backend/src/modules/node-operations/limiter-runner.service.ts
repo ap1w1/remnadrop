@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import Redis, { type RedisOptions } from 'ioredis';
 import { LimiterService } from './limiter.service';
 import { LimiterBridgeSecretsService } from './limiter-bridge-secrets.service';
+import { LimiterControlService } from './limiter-control.service';
 
 /** Runs upstream Go Limiter 5.1.0 as a child of the existing panel process.
  * No additional container or Docker service is required.
@@ -22,10 +23,12 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
   private closing=false;
   private processing=false;
   private nextStartAt=0;
-  constructor(private readonly limiter:LimiterService,private readonly secrets:LimiterBridgeSecretsService){}
-  status():{response:{embedded:boolean;running:boolean;pid:number|null;version:string;redisDatabase:number}}{
+  private ready=false;
+  private lastCheck:string|null=null;
+  constructor(private readonly limiter:LimiterService,private readonly secrets:LimiterBridgeSecretsService,private readonly control:LimiterControlService){}
+  status(){
     return {response:{embedded:true,running:this.isRunning(),
-      pid:this.child?.pid??null,version:'5.1.0',redisDatabase:8}};
+      ready:this.ready,lastCheck:this.lastCheck,pid:this.child?.pid??null,version:'5.1.0',redisDatabase:8}};
   }
   onApplicationBootstrap():void {
     if(process.env.INSTANCE_TYPE&&process.env.INSTANCE_TYPE!=='api')return;
@@ -42,7 +45,7 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
     return !!child?.pid&&child.exitCode===null&&child.signalCode===null;
   }
   private async stop():Promise<void>{
-    const old=this.child;this.child=undefined;this.fingerprint='';
+    const old=this.child;this.child=undefined;this.fingerprint='';this.ready=false;
     if(!old||!this.isRunning(old))return;
     const exited=new Promise<void>(resolve=>old.once('exit',()=>resolve()));
     old.kill('SIGTERM');
@@ -95,6 +98,8 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
     env.WEBHOOK_URL=url+'/limiter-webhook';
     env.WEBHOOK_SECRET=this.secrets.webhookSecret;
     env.WEBHOOK_SECRET_HEADER='false';
+    env.REMNADROP_PANEL_CONTROL_SOCKET=this.control.socketPath;
+    env.REMNADROP_PANEL_CONTROL_TOKEN=this.secrets.controlToken;
     env.REDIS_URL=redisUrl;
     env.LANGUAGE='ru';
     env.TIMEZONE=env.TIMEZONE||'Europe/Moscow';
@@ -112,16 +117,17 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
       if(Date.now()<this.nextStartAt)return;
       const redis=this.redisConnection();
       const env=this.environment(config.env,redis.url);
-      if(!env.TELEGRAM_BOT_TOKEN||!env.TELEGRAM_CHAT_ID||!env.TELEGRAM_ADMIN_IDS){
-        // Revoked credentials must stop the old process before reporting to DB.
+      if(env.TELEGRAM_BOT_TOKEN&&(!env.TELEGRAM_CHAT_ID||!env.TELEGRAM_ADMIN_IDS)){
         if(this.child)await this.stop();
-        throw new Error('Configure Telegram credentials in Tools > Limiter');
+        throw new Error('Укажите Chat ID и Admin IDs для Telegram или отключите Telegram-уведомления');
       }
       const digest=createHash('sha256').update(JSON.stringify(config.env)).digest('hex');
       if(this.isRunning()&&digest===this.fingerprint){
-        await this.limiter.heartbeat();return;
+        const health=await this.control.health();
+        this.ready=Boolean(health?.ready);this.lastCheck=health?.lastCheck??null;
+        await this.limiter.heartbeat(this.ready?undefined:'Limiter запускается или не отвечает',this.lastCheck);return;
       }
-      await this.checkValkey(config.env.ACTION_MODE==='auto',redis.options);
+      await this.checkValkey((config.mode??config.env.ACTION_MODE)==='auto',redis.options);
       mkdirSync(join(this.dir,'geoip'),{recursive:true});
       if(this.child)await this.stop();
       if(this.closing)return;
@@ -129,19 +135,21 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
       const child=spawn(this.binary,[],{cwd:this.dir,env,uid:10001,gid:10001,stdio:['ignore','pipe','pipe'],windowsHide:true});
       this.child=child;this.fingerprint=digest;
       child.once('error',(error)=>{
-        if(this.child===child){this.child=undefined;this.fingerprint='';this.nextStartAt=Date.now()+30000;this.logger.error('Limiter child: '+error.message);}
+        if(this.child===child){this.child=undefined;this.fingerprint='';this.ready=false;this.nextStartAt=Date.now()+30000;this.logger.error('Limiter child: '+error.message);}
       });
       child.once('exit',(code,signal)=>{
         if(this.child!==child||this.closing)return;
         this.logger.warn('Limiter exited: code='+code+' signal='+signal);
-        this.child=undefined;this.fingerprint='';this.nextStartAt=Date.now()+30000;
+        this.child=undefined;this.fingerprint='';this.ready=false;this.nextStartAt=Date.now()+30000;
         void this.limiter.heartbeat('Limiter exited: code='+code+' signal='+signal).catch(()=>{});
       });
       child.stdout?.on('data',(chunk:Buffer)=>this.logger.debug('Limiter output received ('+chunk.length+' bytes)'));
       child.stderr?.on('data',(chunk:Buffer)=>this.logger.warn('Limiter diagnostic output received ('+chunk.length+' bytes)'));
       await new Promise<void>((started,failed)=>{child.once('spawn',started);child.once('error',failed);});
       if(this.closing){await this.stop();return;}
-      await this.limiter.heartbeat();
+      const health=await this.control.health();
+      this.ready=Boolean(health?.ready);this.lastCheck=health?.lastCheck??null;
+      await this.limiter.heartbeat(undefined,this.lastCheck);
     }catch(error){
       const reason=error instanceof Error?error.message:'Unknown limiter error';
       this.logger.warn(reason);

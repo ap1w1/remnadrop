@@ -32,7 +32,9 @@ export const ROUTES = {
         TOOLS: {
             ROOT: '/dashboard/tools',
             LIMITER: '/dashboard/tools/limiter',
+            LIMITER_SETTINGS: '/dashboard/tools/limiter/settings',
             CLOUDFLARE_DNS: '/dashboard/tools/cloudflare-dns',
+            CLOUDFLARE_DNS_SETTINGS: '/dashboard/tools/cloudflare-dns/settings',
             HWID_INSPECTOR: '/dashboard/tools/hwid-inspector',
             SRH_INSPECTOR: '/dashboard/tools/srh-inspector',
             TORRENT_BLOCKER_REPORTS: '/dashboard/tools/torrent-blocker-reports',

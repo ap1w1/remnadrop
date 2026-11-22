@@ -3,7 +3,7 @@ import { Request } from 'express';
 import { PrismaService } from '@common/database/prisma.service';
 import { NodesQueuesService } from '@queue/_nodes';
 import { UsersService } from '@modules/users/users.service';
-import { LimiterService } from './limiter.service';
+import { LimiterService, limiterSubscriptionUrl } from './limiter.service';
 import { LimiterBridgeSecretsService } from './limiter-bridge-secrets.service';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
@@ -69,13 +69,13 @@ export class LimiterBridgeController {
  async user(@Param('userId') userId:string){
    const id=numericId(userId);
    const u=await this.db.users.findUnique({where:{tId:id},select:{
-     tId:true,username:true,status:true,email:true,telegramId:true,
+     tId:true,username:true,status:true,email:true,telegramId:true,shortUuid:true,
      hwidDeviceLimit:true,createdAt:true,activeInternalSquads:{select:{internalSquad:{select:{uuid:true,name:true}}}}
    }});
    if(!u)throw new NotFoundException('User does not exist');
    return {response:{id:Number(u.tId),username:u.username,status:u.status,email:u.email,
      telegramId:u.telegramId===null?null:Number(u.telegramId),hwidDeviceLimit:u.hwidDeviceLimit,
-     subscriptionUrl:'',createdAt:u.createdAt,activeInternalSquads:u.activeInternalSquads.map(x=>x.internalSquad)}};
+     subscriptionUrl:limiterSubscriptionUrl(u.shortUuid)??'',createdAt:u.createdAt,activeInternalSquads:u.activeInternalSquads.map(x=>x.internalSquad)}};
  }
  @Post('api/users/:userId/actions/disable')
  @HttpCode(200)
@@ -83,7 +83,11 @@ export class LimiterBridgeController {
    const u=await this.db.users.findUnique({where:{tId:numericId(userId)},select:{uuid:true}});
    if(!u)throw new NotFoundException();
    const result=await this.users.disableUser(u.uuid);
-   if(!result.isOk)throw new BadRequestException('Unable to disable user');
+   // The pinned Go client recognises A029/A030 in a 400 response. Preserve
+   // these results from the operation itself, including concurrent changes;
+   // an initial status check would lose that distinction for restore timers.
+   if(!result.isOk)throw new BadRequestException({statusCode:400,code:result.code,
+     message:result.message??'Unable to disable user'});
    return {response:{success:true}};
  }
  @Post('api/users/:userId/actions/enable')
@@ -92,7 +96,8 @@ export class LimiterBridgeController {
    const u=await this.db.users.findUnique({where:{tId:numericId(userId)},select:{uuid:true}});
    if(!u)throw new NotFoundException();
    const result=await this.users.enableUser(u.uuid);
-   if(!result.isOk)throw new BadRequestException('Unable to enable user');
+   if(!result.isOk)throw new BadRequestException({statusCode:400,code:result.code,
+     message:result.message??'Unable to enable user'});
    return {response:{success:true}};
  }
  @Post('api/connections/drop')

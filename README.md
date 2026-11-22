@@ -31,10 +31,12 @@ Use `INSTALL.md` for installation and automatic migration from 2.8.1.
 ## Limiter and Cloudflare DNS
 
 The **Tools** menu includes **Limiter** and **Cloudflare DNS** on desktop and
-mobile. The image embeds upstream Limiter 5.1.0 in the existing panel container;
-it starts only after credentials are configured and the administrator enables it.
-Its default mode is manual. Cloudflare DNS requires an API token and zone/host
-bindings before records can be changed. See
+mobile. Limiter opens on recent events with IP/node evidence and the same actions
+and state as its Telegram bot. Configuration lives on a separate settings page;
+Telegram is optional, and Limiter stays disabled until explicitly enabled.
+Cloudflare supports multiple encrypted account tokens, all accessible domains,
+and manual changes to a selected DNS record. Automation workflows combine
+conditions and ordered actions, with a read-only preview and execution history. See
 [`INTEGRATIONS_LIMITER_CLOUDFLARE.md`](INTEGRATIONS_LIMITER_CLOUDFLARE.md) for setup,
 API scopes, webhook signing and integration checks.
 

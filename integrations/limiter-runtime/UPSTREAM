@@ -1,0 +1,7 @@
+Repository: https://github.com/syvlech/remnawave-limiter
+Commit: c5ce367c5f38a345fad59bb813fd9fd67c80a329
+Version: 5.1.0
+
+The adapter overlays keep the upstream action handler, monitor, grouping rules,
+temporary disable/restore queue, settings manager, and Telegram bot. The build
+retains the upstream LICENSE. Apply scripts/patch-limiter.py to this exact source.

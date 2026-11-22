@@ -13,6 +13,7 @@ DATABASE="$RUN_ID-db"
 REDIS="$RUN_ID-redis"
 API="$RUN_ID-api"
 BASELINE="$RUN_ID-baseline"
+LEGACY="$RUN_ID-legacy"
 UPGRADE="$RUN_ID-upgrade"
 REPEAT="$RUN_ID-repeat"
 ENV_FILE=$(mktemp)
@@ -26,7 +27,7 @@ cleanup() {
     if docker inspect "$API" >/dev/null 2>&1; then docker logs --tail 100 "$API" >&2 || true; fi
     if docker inspect "$DATABASE" >/dev/null 2>&1; then docker logs --tail 50 "$DATABASE" >&2 || true; fi
   fi
-  docker rm -f -v "$API" "$BASELINE" "$UPGRADE" "$REPEAT" "$REDIS" "$DATABASE" >/dev/null 2>&1 || true
+  docker rm -f -v "$API" "$BASELINE" "$LEGACY" "$UPGRADE" "$REPEAT" "$REDIS" "$DATABASE" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
   rm -f -- "$ENV_FILE"
   exit "$status"
@@ -79,7 +80,7 @@ docker run -d --name "$DATABASE" --network "$NETWORK" --env-file "$ENV_FILE" \
   postgres:18.4 >/dev/null
 docker run -d --name "$REDIS" --network "$NETWORK" \
   --mount type=tmpfs,destination=/data,tmpfs-size=134217728 \
-  valkey/valkey:8.1-alpine valkey-server --save '' --appendonly no >/dev/null
+  valkey/valkey:8.1-alpine valkey-server --save '' --appendonly yes --appendfsync always >/dev/null
 
 for attempt in $(seq 1 40); do
   if docker exec "$DATABASE" pg_isready -U smoke -d remnadrop_smoke -t 2 >/dev/null 2>&1 \
@@ -104,13 +105,20 @@ run_image() {
 
 printf '\nApplying 128 baseline migrations and inserting an existing user...\n'
 run_image "$BASELINE" '
-  mv prisma/migrations/20261122000100_integrations_limiter_cloudflare /tmp/remnadrop-integration-migration
+  node /checks/application-smoke.cjs stage-baseline
   npm run migrate:deploy
   npm run migrate:seed
   node /checks/application-smoke.cjs prepare-baseline
 '
 
-printf '\nApplying integration migration 129...\n'
+printf '\nApplying previous release 129 and seeding existing integrations...\n'
+run_image "$LEGACY" '
+  node /checks/application-smoke.cjs stage-legacy
+  npm run migrate:deploy
+  node /checks/application-smoke.cjs prepare-legacy
+'
+
+printf '\nUpgrading existing integrations and automation workflows...\n'
 run_image "$UPGRADE" '
   npm run migrate:deploy
   node /checks/application-smoke.cjs verify-upgrade
@@ -126,6 +134,6 @@ printf '\nStarting the real API and checking authenticated endpoints...\n'
 docker run -d --name "$API" --network "$NETWORK" --env-file "$ENV_FILE" \
   --mount "type=bind,source=$TESTS_DIR,target=/checks,readonly" \
   --entrypoint node "$IMAGE" dist/src/main.js >/dev/null
-timeout --signal=TERM --kill-after=10s 150s docker exec "$API" \
+timeout --signal=TERM --kill-after=10s 240s docker exec "$API" \
   node /checks/application-smoke.cjs api
-printf '\nPostgreSQL 128 -> 129 upgrade and real application smoke passed.\n'
+printf '\nPostgreSQL baseline -> previous release -> current release and real application smoke passed.\n'

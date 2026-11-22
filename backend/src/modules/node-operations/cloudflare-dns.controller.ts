@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Roles } from '@common/decorators/roles/roles';
 import { ApiScopeEndpoint, ApiScopeResource } from '@common/decorators/scopes';
 import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
@@ -9,6 +9,7 @@ import { PrismaService } from '@common/database/prisma.service';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Request } from 'express';
 import { CloudflareDnsService } from './cloudflare-dns.service';
+import type { CloudflareRecordChange } from './cloudflare-dns.service';
 
 @Controller('cloudflare-dns')
 @Roles(ROLE.ADMIN)
@@ -17,24 +18,38 @@ import { CloudflareDnsService } from './cloudflare-dns.service';
 export class CloudflareDnsController {
  constructor(private readonly cf:CloudflareDnsService){}
  @Get('settings') settings(){return this.cf.status();}
- @Put('settings') update(@Body() input:{apiToken:string}){return this.cf.configureToken(input.apiToken);}
+ @Put('settings') update(@Body() input:{apiToken:string}){return this.cf.configureToken(input?.apiToken);}
  @Delete('settings') deleteToken(){return this.cf.removeToken();}
- @Get('overview') overview(){return this.cf.overview();}
- @Get('events') events(){return this.cf.events();}
+ @Get('accounts') accounts(){return this.cf.accounts();}
+ @Post('accounts') addAccount(@Body() input:{name:string;apiToken:string}){return this.cf.addAccount(input);}
+ @Put('accounts/:id') updateAccount(@Param('id') id:string,@Body() input:{name?:string;apiToken?:string}){return this.cf.updateAccount(id,input);}
+ @Delete('accounts/:id') deleteAccount(@Param('id') id:string){return this.cf.deleteAccount(id);}
+ @Get('overview') overview(@Query('accountId') accountId?:string){return this.cf.overview(accountId);}
+ @Get('zones') zones(@Query('accountId') accountId:string){return this.cf.listZones(accountId);}
+ @Get('bindings') async bindings(){return {response:await this.cf.bindings()};}
+ @Get('zones/:zoneId/records') records(@Param('zoneId') zoneId:string,@Query('accountId') accountId:string){return this.cf.listRecords(accountId,zoneId);}
+ @Get('events') events(@Query('accountId') accountId?:string){return this.cf.events(accountId);}
+ @Post('records/preview') preview(@Body() input:CloudflareRecordChange){return this.cf.previewRecordChange(input);}
+ @Post('records/replace-ip')
+ @Roles(ROLE.ADMIN,ROLE.API)
+ @ApiScopeEndpoint(getEndpointDetails('/records/replace-ip','post','Change a selected Cloudflare DNS record IP',{
+   scope:'cloudflare-record-write',kind:'write'
+ }))
+ replaceRecord(@Body() input:CloudflareRecordChange){return this.cf.updateRecordIp(input);}
  @Get('links') links(){return this.cf.explicitLinks();}
- @Put('links') link(@Body() body:{zoneId:string;recordId:string;hostUuid:string}){return this.cf.bindHost(body);}
- @Delete('links/:zoneId/:recordId/:hostUuid') unlink(@Param('zoneId') zoneId:string,@Param('recordId') recordId:string,@Param('hostUuid') hostUuid:string){
-   return this.cf.unbindHost({zoneId,recordId,hostUuid});
+ @Put('links') link(@Body() body:{accountId?:string;zoneId:string;recordId:string;hostUuid:string}){return this.cf.bindHost(body);}
+ @Delete('links/:zoneId/:recordId/:hostUuid') unlink(@Param('zoneId') zoneId:string,@Param('recordId') recordId:string,@Param('hostUuid') hostUuid:string,@Query('accountId') accountId?:string){
+   return this.cf.unbindHost({accountId,zoneId,recordId,hostUuid});
  }
- @Put('zones') bind(@Body() input:{domain:string;zoneId:string;autoSync:boolean}){
-   return this.cf.upsertBinding(input.domain,input.zoneId,input.autoSync);
+ @Put('zones') bind(@Body() input:{accountId?:string;domain:string;zoneId:string;autoSync:boolean}){
+   return this.cf.upsertBinding(input.domain,input.zoneId,input.autoSync,input.accountId);
  }
  @Post('replace-ip')
  @Roles(ROLE.ADMIN,ROLE.API)
  @ApiScopeEndpoint(getEndpointDetails('/replace-ip','post','Replace a linked Cloudflare DNS record IP',{
    scope:'cloudflare-replace-ip',kind:'write'
  }))
- replace(@Body() input:{zoneId:string;recordId:string;nodeUuid:string;expectedOldIp:string;newIp:string}){
+ replace(@Body() input:{accountId?:string;zoneId:string;recordId:string;nodeUuid:string;expectedOldIp:string;newIp:string}){
    return this.cf.replaceIp(input);
  }
 }

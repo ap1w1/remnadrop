@@ -1,5 +1,19 @@
 FROM ghcr.io/syvlech/remnawave-limiter:c5ce367 AS limiter-upstream
 
+FROM golang:1.27-alpine AS limiter-build
+RUN apk add --no-cache git python3
+WORKDIR /limiter
+RUN git init . \
+    && git remote add origin https://github.com/syvlech/remnawave-limiter.git \
+    && git fetch --depth 1 origin c5ce367c5f38a345fad59bb813fd9fd67c80a329 \
+    && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = c5ce367c5f38a345fad59bb813fd9fd67c80a329
+COPY integrations/limiter-runtime /remnadrop/integrations/limiter-runtime
+COPY scripts/patch-limiter.py /remnadrop/scripts/patch-limiter.py
+RUN python3 /remnadrop/scripts/patch-limiter.py /limiter \
+    && go test ./... \
+    && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/remnawave-limiter ./cmd/limiter
+
 FROM node:24.22.3-trixie-slim AS frontend-build
 WORKDIR /build
 COPY frontend/package*.json ./
@@ -36,9 +50,9 @@ RUN NODE_OPTIONS=--max-old-space-size=3072 npm run build && npm run build:seed
 
 FROM backend-build AS development
 ENV NODE_ENV=production
-# Original upstream Limiter 5.1.0 binary is embedded in the SAME panel image.
-# It is started and stopped by NestJS LimiterRunnerService, not another container.
-COPY --from=limiter-upstream /usr/local/bin/remnawave-limiter /usr/local/bin/remnawave-limiter
+# Build the pinned upstream engine with the panel adapter; Telegram and the UI
+# share the original actions, runtime settings, ignore state and restore queue.
+COPY --from=limiter-build /out/remnawave-limiter /usr/local/bin/remnawave-limiter
 # Go uses the OS trust store for Telegram/MaxMind HTTPS. node:slim removes
 # ca-certificates after installing Node, whose own bundled roots are separate.
 COPY --from=limiter-upstream /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt

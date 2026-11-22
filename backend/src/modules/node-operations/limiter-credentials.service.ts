@@ -18,7 +18,11 @@ export class LimiterCredentialsService {
  }
  async status(){
    const rows=await this.db.$queryRaw<{updated_at:Date}[]>`SELECT updated_at FROM limiter_credentials WHERE id=1`;
-   return {response:{configured:rows.length>0,source:rows.length?'stored':'none',updatedAt:rows[0]?.updated_at??null}};
+   const value=rows.length?await this.get():{};
+   return {response:{configured:rows.length>0,telegramConfigured:Boolean(value.telegramBotToken),
+     maxmindConfigured:Boolean(value.maxmindLicenseKey),telegramChatId:value.telegramChatId??'',
+     telegramAdminIds:value.telegramAdminIds??'',sharedHwidSquadUuids:value.sharedHwidSquadUuids??[],
+     source:rows.length?'stored':'none',updatedAt:rows[0]?.updated_at??null}};
  }
  async get():Promise<Partial<LimiterSecrets>>{
    const rows=await this.db.$queryRaw<{iv:Uint8Array;tag:Uint8Array;ciphertext:Uint8Array}[]>`
@@ -34,14 +38,18 @@ export class LimiterCredentialsService {
  async save(input:unknown){
    if(!input||typeof input!=='object'||Array.isArray(input))throw new BadRequestException('Invalid credentials');
    const data=input as Partial<LimiterSecrets>;
-   const telegramBotToken=typeof data.telegramBotToken==='string'?data.telegramBotToken.trim():'';
-   const telegramChatId=typeof data.telegramChatId==='string'?data.telegramChatId.trim():'';
-   const telegramAdminIds=typeof data.telegramAdminIds==='string'?data.telegramAdminIds.trim():'';
-   const maxmindLicenseKey=typeof data.maxmindLicenseKey==='string'?data.maxmindLicenseKey.trim():'';
-   const sharedHwidSquadUuids=Array.isArray(data.sharedHwidSquadUuids)?data.sharedHwidSquadUuids:[];
-   if(!/^[0-9]{5,15}:[A-Za-z0-9_-]{20,}$/.test(telegramBotToken)||!/^[-]?[0-9]{1,20}$/.test(telegramChatId)||
-      !/^[0-9]{1,20}(,[0-9]{1,20})*$/.test(telegramAdminIds.replace(/\s/g,''))||
-      maxmindLicenseKey.length>200||sharedHwidSquadUuids.length>200||sharedHwidSquadUuids.some(x=>typeof x!=='string'||!uuid.test(x)))
+   const saved=await this.get();
+   for(const key of ['telegramBotToken','telegramChatId','telegramAdminIds','maxmindLicenseKey'] as const)
+     if(data[key]!==undefined&&typeof data[key]!=='string')throw new BadRequestException('Invalid credential value');
+   const telegramBotToken=data.telegramBotToken?.trim()||saved.telegramBotToken||'';
+   const telegramChatId=data.telegramChatId?.trim()||saved.telegramChatId||'';
+   const telegramAdminIds=(data.telegramAdminIds?.trim()||saved.telegramAdminIds||'').replace(/\s/g,'');
+   const maxmindLicenseKey=data.maxmindLicenseKey?.trim()||saved.maxmindLicenseKey||'';
+   const sharedHwidSquadUuids=data.sharedHwidSquadUuids??saved.sharedHwidSquadUuids??[];
+   if((telegramBotToken||telegramChatId||telegramAdminIds)&&
+      (!/^[0-9]{5,15}:[A-Za-z0-9_-]{20,200}$/.test(telegramBotToken)||!/^[-]?[0-9]{1,20}$/.test(telegramChatId)||
+      !/^[0-9]{1,20}(,[0-9]{1,20})*$/.test(telegramAdminIds))||
+      maxmindLicenseKey.length>200||telegramAdminIds.length>4096||!Array.isArray(sharedHwidSquadUuids)||sharedHwidSquadUuids.length>200||sharedHwidSquadUuids.some(x=>typeof x!=='string'||!uuid.test(x)))
       throw new BadRequestException('Invalid Telegram/MaxMind configuration');
    const value:LimiterSecrets={telegramBotToken,telegramChatId,telegramAdminIds:telegramAdminIds.replace(/\s/g,''),
      maxmindLicenseKey,sharedHwidSquadUuids};

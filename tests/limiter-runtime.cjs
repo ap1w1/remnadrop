@@ -23,7 +23,7 @@ function loadSource(filename, names, globals) {
 
 function harness(env = {}, spawnError = null) {
   const children = [], heartbeats = [], redisClients = [];
-  const config = { enabled: true, env: {
+  const config = { enabled: true, mode:'manual', env: {
     ACTION_MODE: 'manual', TELEGRAM_BOT_TOKEN: 'test-token',
     TELEGRAM_CHAT_ID: '123', TELEGRAM_ADMIN_IDS: '123',
   } };
@@ -63,11 +63,13 @@ function harness(env = {}, spawnError = null) {
       },
     },
   );
+  const control = { socketPath:'/var/lib/remnawave/limiter/control.sock',ready:true,
+    async health(){return this.ready?{ready:true,lastCheck:'2026-11-22T19:00:00.000Z'}:null;} };
   const runner = new LimiterRunnerService({
     async runtimeConfig() { return { response: config }; },
     async heartbeat(reason) { heartbeats.push(reason); },
-  }, { apiToken: 'internal-bearer', webhookSecret: 'internal-hmac' });
-  return { runner, config, children, heartbeats, redisClients, redisState, files };
+  }, { apiToken: 'internal-bearer', webhookSecret: 'internal-hmac', controlToken:'internal-control' },control);
+  return { runner, config, children, heartbeats, redisClients, redisState, files,control };
 }
 
 test('TCP transport uses panel host/port/password with isolated DB 8', async () => {
@@ -86,7 +88,10 @@ test('TCP transport uses panel host/port/password with isolated DB 8', async () 
   assert.equal(h.redisClients[0].options.password, password);
   assert.equal(h.children[0].options.env.JWT_AUTH_SECRET, undefined);
   assert.equal(h.children[0].options.uid, 10001);
+  assert.equal(h.children[0].options.env.REMNADROP_PANEL_CONTROL_SOCKET,'/var/lib/remnawave/limiter/control.sock');
+  assert.equal(h.children[0].options.env.REMNADROP_PANEL_CONTROL_TOKEN,'internal-control');
   assert.equal(h.runner.status().response.running, true);
+  assert.equal(h.runner.status().response.ready,true);
   await h.runner.tick();
   assert.equal(h.children.length, 1, 'unchanged config does not start a second process');
 });
@@ -127,7 +132,7 @@ test('a configured missing socket is not silently replaced with another Redis', 
 
 test('automatic mode requires persistence on the chosen Redis', async () => {
   const h = harness({ REDIS_HOST: 'redis', REDIS_PORT: '6379' });
-  h.config.env.ACTION_MODE = 'auto';
+  h.config.mode = 'auto';
   await h.runner.tick();
   assert.equal(h.children.length, 0);
   assert.match(h.heartbeats.at(-1), /requires durable Valkey/);
@@ -163,7 +168,7 @@ test('disabling the configured engine stops the existing child', async () => {
   assert.equal(h.runner.status().response.running, false);
 });
 
-for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_ADMIN_IDS']) {
+for (const key of ['TELEGRAM_CHAT_ID', 'TELEGRAM_ADMIN_IDS']) {
   test('deleting ' + key + ' stops the old child before reporting the error', async () => {
     const h = harness({ REDIS_HOST: 'redis', REDIS_PORT: '6379' });
     await h.runner.tick();
@@ -175,13 +180,35 @@ for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_ADMIN_IDS
     };
     await h.runner.tick();
     assert.deepEqual(reports, [{
-      reason: 'Configure Telegram credentials in Tools > Limiter',
+      reason: 'Укажите Chat ID и Admin IDs для Telegram или отключите Telegram-уведомления',
       signal: 'SIGTERM', running: false,
     }]);
     assert.equal(h.children.length, 1, 'no replacement starts with missing credentials');
     assert.equal(h.runner.status().response.running, false);
   });
 }
+
+test('removing Telegram credentials restarts into panel-only mode',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});
+ await h.runner.tick();
+ for(const key of ['TELEGRAM_BOT_TOKEN','TELEGRAM_CHAT_ID','TELEGRAM_ADMIN_IDS'])delete h.config.env[key];
+ await h.runner.tick();
+ assert.equal(h.children.length,2);
+ assert.equal(h.children[0].child.signalCode,'SIGTERM');
+ assert.equal(h.children[1].options.env.TELEGRAM_BOT_TOKEN,undefined);
+ assert.equal(h.runner.status().response.ready,true);
+});
+
+test('spawned process is not reported ready before its authenticated control socket responds',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});
+ h.control.ready=false;await h.runner.tick();
+ assert.equal(h.runner.status().response.running,true);
+ assert.equal(h.runner.status().response.ready,false);
+ h.control.ready=true;await h.runner.tick();
+ assert.equal(h.runner.status().response.ready,true);
+ assert.equal(h.runner.status().response.lastCheck,'2026-11-22T19:00:00.000Z');
+ assert.equal(h.children.length,1);
+});
 
 test('shutdown during a Redis probe cannot start a new orphan child', async () => {
   const h = harness({ REDIS_HOST: 'redis', REDIS_PORT: '6379' });
