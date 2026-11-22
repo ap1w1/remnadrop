@@ -84,8 +84,8 @@ type DpiAction = Extract<AutomationAction, { type: 'dpi_check' }>
 type DpiPop = { id: number; name?: string; city?: string; region?: string; operator?: string }
 type DpiRegion = {location:string; pop_ids?:number[]}
 const dpiCountries=[
-    {value:'russia',label:'Россия'}, {value:'russia_mobile',label:'Россия · мобильные сети'},
-    {value:'china',label:'Китай'}, {value:'iran',label:'Иран'}, {value:'turkmenistan',label:'Туркменистан'},
+    {value:'russia',label:'🇷🇺 Россия'}, {value:'russia_mobile',label:'🇷🇺 Россия · мобильные сети'},
+    {value:'china',label:'🇨🇳 Китай'}, {value:'iran',label:'🇮🇷 Иран'}, {value:'turkmenistan',label:'🇹🇲 Туркменистан'},
 ]
 function DpiPointPicker({ target, onChange }: {target:DpiRegion;onChange:(region:DpiRegion)=>void}) {
     const [pops,setPops]=useState<DpiPop[]>([])
@@ -155,7 +155,7 @@ function DpiRegionFields({ action, onChange, dpiCostLimit }: {
                 label="Максимум ожидания, минут" value={action.gate!.timeoutMinutes}
                 onChange={value=>onChange({...action,gate:{...action.gate!,timeoutMinutes:Number(value)}})}/>
         </SimpleGrid>}
-        <Text size="xs" c="dimmed">Лимит суммарной стоимости проверок: ${dpiCostLimit} USD. Неполные, ошибочные или просроченные результаты дают «Неопределённо» — автоматический failover не выполняется.</Text>
+        <Text size="xs" c="dimmed">Проверки платные, стоимость рассчитывает DPI Checker по балансу. Неполные или ошибочные результаты дают «Неопределённо» — автоматический failover запрещён.</Text>
     </Stack>
 }
 
