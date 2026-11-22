@@ -277,8 +277,8 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
         const row = samples[0];
         if (!row || row.available === null || !row.sampled_at) { state.reason = 'Нет свежих метрик за последние 3 минуты'; return state; }
         state.online = row.online; state.baseline = row.baseline; state.sampledAt = row.sampled_at;
-        if (row.available === 0) {
-            // Preserve the existing online_drop behavior for confirmed disconnected nodes.
+        if (row.available === 0 && rule.trigger_type !== 'online_value') {
+            // Preserve existing offline handling; absolute online comparisons require a valid measurement.
             state.matched = true; state.reason = 'Нода недоступна по последнему замеру';
         } else if (rule.trigger_type === 'node_offline') state.reason = 'Нода доступна';
         else if (rule.trigger_type === 'online_value') {
