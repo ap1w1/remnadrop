@@ -10,14 +10,18 @@ import { postSignedWebhook } from '@modules/squad-quotas/quota-webhooks.service'
 import { DpiCheckerService, DpiLocation } from './dpi-checker.service';
 import { NodeIpService } from './node-ip.service';
 import { CloudflareDnsService } from './cloudflare-dns.service';
+import { evaluateDpiRegions, type DpiCheckEvidence, type DpiVerdict } from './automation-dpi-evaluator';
 
-export type AutomationAction =
-    | { type: 'dpi_check'; hosts: string[]; location: DpiLocation; pop_ids?: number[] }
+export type DpiRegion = { location: DpiLocation; pop_ids?: number[] };
+export type DpiGate = { minUnavailableRegions: number; timeoutMinutes: number };
+export type AutomationAction = (
+    | { type: 'dpi_check'; hosts: string[]; location: DpiLocation; pop_ids?: number[]; locations?: DpiRegion[]; gate?: DpiGate }
     | { type: 'hide_hosts' | 'show_hosts'; hosts: string[] }
     | { type: 'rotate_ip'; updateCloudflare?: boolean }
     | { type: 'webhook'; url: string }
     | { type: 'cloudflare_dns'; accountId: string; zoneId: string; recordId: string;
-        ipSource: 'static' | 'rotated'; newIp?: string; expectedOldIp?: string; domain?: string };
+        ipSource: 'static' | 'rotated'; newIp?: string; expectedOldIp?: string; domain?: string }
+    ) & { when?: 'always' | 'dpi_unavailable' | 'dpi_available' | 'dpi_unknown' };
 
 export type AutomationInput = {
     node_uuid: string | null;
@@ -45,7 +49,9 @@ type TriggerState = {
 };
 type ActionDetail = {
     index: number; type: string; title: string; success: boolean;
-    status: 'completed' | 'failed' | 'skipped'; message: string; startedAt: string; finishedAt: string;
+    status: 'completed' | 'failed' | 'skipped' | 'pending'; message: string; startedAt: string; finishedAt: string;
+    jobs?: {id:string;location:string;popIds:number[];popRegions:Record<string,string>;popNames:Record<string,string>;hostCount:number}[];
+    outcome?: DpiVerdict; rotation?: {previousIp:string;newIp:string};
 };
 
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
@@ -90,14 +96,20 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
     }
     if (rule.trigger_type === 'interval' && rule.cooldown_minutes > rule.interval_minutes) throw new BadRequestException('Пауза между запусками не может быть больше интервала');
     if (!Array.isArray(rule.actions) || rule.actions.length < 1 || rule.actions.length > 8) throw new BadRequestException('Добавьте от 1 до 8 действий');
-    let rotationSeen = false;
+    let rotationSeen = false, rotationWhen: string | undefined, gateSeen = false, dpiSeen = false;
     for (const action of rule.actions) {
         if (!action || typeof action !== 'object' || Array.isArray(action)) throw new BadRequestException('Некорректное действие');
+        if (action.when !== undefined && !['always','dpi_unavailable','dpi_available','dpi_unknown'].includes(action.when))
+            throw new BadRequestException('Некорректная ветка выполнения');
+        if (action.when && action.when !== 'always' && !gateSeen) throw new BadRequestException('Для ветки сначала добавьте DPI-проверку с ожиданием результата');
+        if (action.type !== 'dpi_check' && gateSeen && ['rotate_ip','cloudflare_dns','hide_hosts'].includes(action.type) && action.when !== 'dpi_unavailable')
+            throw new BadRequestException('После DPI-проверки смена IP, DNS и скрытие хостов допускаются только в ветке «Недоступно»');
         if (action.type === 'rotate_ip') {
+            if (dpiSeen && !gateSeen) throw new BadRequestException('Смену IP после DPI можно делать только после ожидания результатов и в ветке «Недоступно»');
             if (!rule.node_uuid) throw new BadRequestException('Для смены IP выберите ноду');
             if (rotationSeen) throw new BadRequestException('Одна автоматизация может менять IP ноды только один раз');
             if (action.updateCloudflare !== undefined && typeof action.updateCloudflare !== 'boolean') throw new BadRequestException('Некорректная настройка Cloudflare');
-            rotationSeen = true;
+            rotationSeen = true; rotationWhen = action.when;
         } else if (action.type === 'hide_hosts' || action.type === 'show_hosts' || action.type === 'dpi_check') {
             if (!rule.node_uuid) throw new BadRequestException('Для действий с хостами выберите ноду');
             if (!Array.isArray(action.hosts) || !action.hosts.length || action.hosts.length > 20 ||
@@ -105,9 +117,29 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
                 throw new BadRequestException('Выберите от 1 до 20 разных хостов');
             }
             if (action.type === 'dpi_check') {
+                dpiSeen = true;
+                if (gateSeen) throw new BadRequestException('Не более одной DPI-проверки с условным ветвлением в одном правиле');
+                if (action.when && action.when !== 'always') throw new BadRequestException('Сама DPI-проверка запускается без условия ветки');
                 if (!REGIONS.includes(action.location)) throw new BadRequestException('Выберите страну проверки');
                 if (action.pop_ids !== undefined && (!Array.isArray(action.pop_ids) || action.pop_ids.length<1 || action.pop_ids.length>100 || action.pop_ids.some(id=>!Number.isInteger(id)||id<=0) || new Set(action.pop_ids).size !== action.pop_ids.length))
                     throw new BadRequestException('Выберите до 100 уникальных точек проверки (PoP)');
+                if (action.locations !== undefined) {
+                    if (!Array.isArray(action.locations) || !action.locations.length || action.locations.length > 5)
+                        throw new BadRequestException('Выберите от 1 до 5 стран для DPI-проверки');
+                    if (new Set(action.locations.map(item=>item.location)).size !== action.locations.length)
+                        throw new BadRequestException('Страны DPI не должны повторяться');
+                    for (const target of action.locations) {
+                        if (!target || !REGIONS.includes(target.location)) throw new BadRequestException('Некорректная страна DPI');
+                        if (target.pop_ids !== undefined && (!Array.isArray(target.pop_ids) || !target.pop_ids.length || target.pop_ids.length > 100 || target.pop_ids.some(id=>!Number.isSafeInteger(id)||id<=0) || new Set(target.pop_ids).size!==target.pop_ids.length))
+                            throw new BadRequestException('Некорректные точки проверки DPI');
+                    }
+                }
+                if (action.gate !== undefined) {
+                    if (!Number.isInteger(action.gate.minUnavailableRegions) || action.gate.minUnavailableRegions<1 || action.gate.minUnavailableRegions>100 ||
+                        !Number.isInteger(action.gate.timeoutMinutes) || action.gate.timeoutMinutes<3 || action.gate.timeoutMinutes>45)
+                        throw new BadRequestException('Укажите порог регионов 1–100 и ожидание 3–45 минут');
+                    gateSeen = true;
+                }
             }
         } else if (action.type === 'webhook') {
             let url: URL;
@@ -118,6 +150,7 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
             if (!CF_ID.test(action.zoneId) || !CF_ID.test(action.recordId)) throw new BadRequestException('Выберите домен и DNS-запись');
             if (!['static','rotated'].includes(action.ipSource)) throw new BadRequestException('Выберите источник IP');
             if (action.ipSource === 'rotated' && !rotationSeen) throw new BadRequestException('Перед обновлением DNS добавьте действие «Сменить IP ноды»');
+            if (action.ipSource === 'rotated' && gateSeen && rotationWhen !== action.when) throw new BadRequestException('Ветка DNS должна совпадать с веткой смены IP');
             if (action.ipSource === 'static' && (typeof action.newIp !== 'string' || !isIP(action.newIp))) throw new BadRequestException('Укажите корректный IPv4 или IPv6');
             if (action.expectedOldIp !== undefined && (typeof action.expectedOldIp !== 'string' || !isIP(action.expectedOldIp))) throw new BadRequestException('Укажите корректный ожидаемый старый IP');
         } else throw new BadRequestException('Неизвестное действие автоматизации');
