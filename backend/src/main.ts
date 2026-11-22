@@ -10,7 +10,6 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
-import { json } from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { utilities as nestWinstonModuleUtilities, WinstonModule } from 'nest-winston';
@@ -68,6 +67,7 @@ const logger = createLogger({
 
 async function bootstrap(): Promise<void> {
     const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+        rawBody: true,
         logger: WinstonModule.createLogger({
             instance: logger,
         }),
@@ -75,7 +75,8 @@ async function bootstrap(): Promise<void> {
 
     app.disable('x-powered-by');
 
-    app.use(json({ limit: '100mb' }));
+    // Keep the exact bytes needed by Limiter and Cloudflare HMAC webhooks.
+    app.useBodyParser('json', { limit: '100mb' });
 
     const config = app.get(TypedConfigService);
 

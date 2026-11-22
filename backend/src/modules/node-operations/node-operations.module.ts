@@ -9,10 +9,20 @@ import { NodeIpService } from './node-ip.service';
 import { NodeIpController } from './node-ip.controller';
 import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
+import { LimiterService } from './limiter.service';
+import { LimiterCredentialsService } from './limiter-credentials.service';
+import { LimiterBridgeSecretsService } from './limiter-bridge-secrets.service';
+import { LimiterRunnerService } from './limiter-runner.service';
+import { LimiterController } from './limiter.controller';
+import { CloudflareDnsService } from './cloudflare-dns.service';
+import { CloudflareDnsController, CloudflareDnsWebhookController } from './cloudflare-dns.controller';
+import { DiskMetricsController } from './disk-metrics.controller';
+import { LimiterBridgeController, LimiterBridgeGuard } from './limiter-bridge.controller';
+import { LimiterWebhookController } from './limiter-webhook.controller';
 
 @Module({
   imports:[CqrsModule,UsersModule,SubscriptionTemplateModule],
-  providers:[DpiCheckerService,DpiCredentialsService,NodeIpService,AutomationsService],
-  controllers:[DpiCheckerController,NodeIpController,AutomationsController],
+  providers:[DpiCheckerService,DpiCredentialsService,NodeIpService,CloudflareDnsService,AutomationsService,LimiterBridgeSecretsService,LimiterService,LimiterCredentialsService,LimiterRunnerService,LimiterBridgeGuard],
+  controllers:[DpiCheckerController,NodeIpController,AutomationsController,LimiterController,CloudflareDnsController,CloudflareDnsWebhookController,DiskMetricsController,LimiterBridgeController,LimiterWebhookController],
 })
 export class NodeOperationsModule {}

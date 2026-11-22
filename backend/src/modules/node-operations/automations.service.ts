@@ -5,8 +5,9 @@ import { Prisma } from '@prisma/client';
 import { postSignedWebhook } from '@modules/squad-quotas/quota-webhooks.service';
 import { DpiCheckerService, DpiLocation } from './dpi-checker.service';
 import { NodeIpService } from './node-ip.service';
+import { CloudflareDnsService } from './cloudflare-dns.service';
 
-type Action={type:'dpi_check';hosts:string[];location:DpiLocation}|{type:'hide_hosts';hosts:string[]}|{type:'rotate_ip'}|{type:'webhook';url:string};
+type Action={type:'dpi_check';hosts:string[];location:DpiLocation}|{type:'hide_hosts';hosts:string[]}|{type:'rotate_ip';updateCloudflare?:boolean}|{type:'webhook';url:string};
 type Rule={id:string;node_uuid:string;name:string;enabled:boolean;drop_percent:number;min_online:number;duration_minutes:number;cooldown_minutes:number;actions:Action[];pending_since:Date|null;last_run_at:Date|null};
 const uuid=/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 function validate(input:Partial<Rule>){
@@ -14,7 +15,10 @@ function validate(input:Partial<Rule>){
   for(const [key,min,max] of [['drop_percent',1,100],['min_online',0,1000000],['duration_minutes',1,1440],['cooldown_minutes',1,10080]] as const){if(!Number.isInteger(input[key])||Number(input[key])<min||Number(input[key])>max)throw new BadRequestException(`Invalid ${key}`)}
   if(!Array.isArray(input.actions)||input.actions.length<1||input.actions.length>4)throw new BadRequestException('Select 1–4 actions');
   for(const action of input.actions){
-    if(action.type==='rotate_ip')continue;
+    if(action.type==='rotate_ip'){
+      if(action.updateCloudflare!==undefined&&typeof action.updateCloudflare!=='boolean')throw new BadRequestException('Invalid Cloudflare DNS option');
+      continue;
+    }
     if(action.type==='webhook'){if(!/^https:\/\//.test(action.url))throw new BadRequestException('Webhook must use HTTPS');continue;}
     if(!action || typeof action !== 'object')throw new BadRequestException('Invalid action');
     if(action.type==='hide_hosts'||action.type==='dpi_check'){
@@ -29,7 +33,7 @@ export class AutomationsService implements OnModuleInit,OnModuleDestroy {
   private timer?:ReturnType<typeof setInterval>;
   private busy=false;
   private readonly logger=new Logger(AutomationsService.name);
-  constructor(private readonly db:PrismaService,private readonly dpi:DpiCheckerService,private readonly ips:NodeIpService){}
+  constructor(private readonly db:PrismaService,private readonly dpi:DpiCheckerService,private readonly ips:NodeIpService,private readonly cf:CloudflareDnsService){}
   onModuleInit(){if(process.env.INSTANCE_TYPE==='scheduler'){this.timer=setInterval(()=>void this.tick(),60000);void this.tick();}}
   onModuleDestroy(){if(this.timer)clearInterval(this.timer);}
   async list(){return {response:await this.db.$queryRaw`SELECT r.*,n.name AS node_name FROM node_automation_rules r JOIN nodes n ON n.uuid=r.node_uuid ORDER BY r.created_at DESC`};}
@@ -69,7 +73,24 @@ export class AutomationsService implements OnModuleInit,OnModuleDestroy {
     const details:{type:string;success:boolean;message:string}[]=[];
     for(const action of rule.actions){try{
       if(action.type==='dpi_check'){const prepared=await this.dpi.prepare({hosts:action.hosts,location:action.location});await this.dpi.start(prepared.response.id,Math.max(0,Number(process.env.DPICHECKER_AUTOMATION_MAX_COST_USD??'1')));details.push({type:action.type,success:true,message:`DPI check ${prepared.response.id} started`});}
-      else if(action.type==='rotate_ip'){const result=await this.ips.rotateNext(rule.node_uuid,'automation');details.push({type:action.type,success:true,message:JSON.stringify(result.response)});}
+      else if(action.type==='rotate_ip'){
+        const result=await this.ips.rotateNext(rule.node_uuid,'automation');
+        const rotated=result.response as {previousIp?:string;newIp?:string;success:boolean};
+        details.push({type:action.type,success:true,message:JSON.stringify(result.response)});
+        if(action.updateCloudflare){
+          if(!rotated.previousIp||!rotated.newIp){
+            details.push({type:'cloudflare_dns',success:true,message:'No previous active IP; DNS update skipped'});
+          }else{
+            try {
+              const dns=await this.cf.syncAfterRotation(rule.node_uuid,rotated.previousIp,rotated.newIp);
+              details.push({type:'cloudflare_dns',success:true,message:JSON.stringify(dns)});
+            }catch(error){
+              // IP rotation succeeded and cannot be rolled back automatically.
+              details.push({type:'cloudflare_dns',success:false,message:String(error)});
+            }
+          }
+        }
+      }
       else if(action.type==='hide_hosts'){
         // Shared hosts cannot be hidden from just one node. Skip them instead of affecting other nodes.
         // Do not hide shared hosts or hosts not belonging to this rule's node.

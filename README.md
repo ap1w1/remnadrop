@@ -28,6 +28,21 @@ assets are bundled with checksums in `editor-assets.lock.json`; editor behavior
 still needs browser acceptance testing.
 Use `INSTALL.md` for installation and automatic migration from 2.8.1.
 
+## Limiter and Cloudflare DNS
+
+The **Tools** menu includes **Limiter** and **Cloudflare DNS** on desktop and
+mobile. The image embeds upstream Limiter 5.1.0 in the existing panel container;
+it starts only after credentials are configured and the administrator enables it.
+Its default mode is manual. Cloudflare DNS requires an API token and zone/host
+bindings before records can be changed. See
+[`INTEGRATIONS_LIMITER_CLOUDFLARE.md`](INTEGRATIONS_LIMITER_CLOUDFLARE.md) for setup,
+API scopes, webhook signing and integration checks.
+
+The update preflight verifies both frontend routes, the Limiter executable and
+CA certificates, and the integration migration in the built image before
+switching the running panel. The upstream version label remains 2.8.1; the
+RemnaDrop Git revision identifies these fork features.
+
 ## Verification
 
 Use Node.js 24.22.3. In backend: `npm ci`, `npm run migrate:generate`,
@@ -83,3 +98,4 @@ sudo remnadrop update
 - Deployment regressions can be checked without a Docker daemon or production database: `python3 -m unittest discover -s tests -v`.
 - The current production database is not automatically rolled back on errors. For production, rehearse on an isolated test system and retain the printed backup locations. Do not run an old image against a new schema without a verified rollback plan.
 - The CLI assumes the previously installed RemnaDrop layout with `/opt/remnawave`, `remnawave`, `remnawave-db`, and `remnawave-redis`. A clean GitHub import by itself does not install or upgrade the running service.
+

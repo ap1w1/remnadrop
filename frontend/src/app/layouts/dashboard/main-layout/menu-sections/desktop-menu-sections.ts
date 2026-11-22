@@ -13,6 +13,8 @@ import {
 } from 'react-icons/pi'
 import {
     TbArchive,
+    TbCloud,
+    TbShieldCheck,
     TbHierarchy3,
     TbChartArcs,
     TbCirclesRelation,
@@ -233,6 +235,8 @@ export const useDesktopMenuSections = (): MenuItem[] => {
             id: 'tools',
             icon: TbTools,
             section: [
+                { name: 'Limiter', id: 'limiter', href: ROUTES.DASHBOARD.TOOLS.LIMITER, icon: TbShieldCheck },
+                { name: 'Cloudflare DNS', id: 'cloudflare-dns', href: ROUTES.DASHBOARD.TOOLS.CLOUDFLARE_DNS, icon: TbCloud },
                 {
                     name: t('constants.hwid-inspector'),
                     href: ROUTES.DASHBOARD.TOOLS.HWID_INSPECTOR,

@@ -68,6 +68,11 @@ say "Built image ID: $TARGET_IMAGE_ID"
 say 'Verifying new frontend and migration files...'
 docker run --rm --network none --entrypoint sh "$IMAGE" -ec '
   test -f /app/frontend/index.html
+  test -x /usr/local/bin/remnawave-limiter
+  test -s /etc/ssl/certs/ca-certificates.crt
+  test -s /app/prisma/migrations/20261122000100_integrations_limiter_cloudflare/migration.sql
+  grep -RqlF "/dashboard/tools/limiter" /app/frontend
+  grep -RqlF "/dashboard/tools/cloudflare-dns" /app/frontend
   test -f /app/prisma/migrations/20261120233000_monitoring_retention/migration.sql
   grep -RqlF "t.me/dpi_checker_robot?start=p453722" /app/frontend
   grep -RqlF "Документация API" /app/frontend
@@ -152,3 +157,4 @@ else
   say 'WARNING: systemd not found; backup-agent must be installed and scheduled manually.'
 fi
 say 'Check the browser with Ctrl+Shift+R. Node TLS errors require separate diagnostics.'
+

@@ -1,3 +1,5 @@
+import { LimiterPage } from '@pages/dashboard/node-operations/limiter.page'
+import { CloudflareDnsPage } from '@pages/dashboard/node-operations/cloudflare-dns.page'
 import { BackupsPage } from '@pages/dashboard/backups/backups.page'
 import { NodeTopologyPage } from '@pages/dashboard/node-topology/node-topology.page'
 import { DocumentationPage } from '@pages/dashboard/documentation/documentation.page'
@@ -144,6 +146,8 @@ const router = createBrowserRouter(
                     </Route>
 
                     <Route path={ROUTES.DASHBOARD.TOOLS.ROOT}>
+                        <Route element={<LimiterPage />} path={ROUTES.DASHBOARD.TOOLS.LIMITER} />
+                        <Route element={<CloudflareDnsPage />} path={ROUTES.DASHBOARD.TOOLS.CLOUDFLARE_DNS} />
                         <Route
                             element={<HwidInspectorPageConnector />}
                             path={ROUTES.DASHBOARD.TOOLS.HWID_INSPECTOR}
