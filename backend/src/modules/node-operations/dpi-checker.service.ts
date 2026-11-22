@@ -43,6 +43,17 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
   }
   async pops(location:DpiLocation,optimal=false){this.validateLocation(location);return this.api(`/pops${optimal?'/optimal':''}?location=${encodeURIComponent(location)}`,{},false);}
   private validateLocation(location:string){if(!LOCATIONS.includes(location))throw new BadRequestException('Invalid location');}
+  /** Expose host-to-node membership and visible diagnostics without VPN credentials. */
+  async hostOptions(){
+    const [nodes,hosts]=await Promise.all([
+      this.db.$queryRaw`SELECT uuid,name,address,country_code AS "countryCode" FROM nodes ORDER BY name`,
+      this.db.$queryRaw`SELECT h.uuid,h.remark,h.address,h.is_disabled AS "isDisabled",
+        h.is_hidden AS "isHidden",h.config_profile_inbound_uuid AS "inboundUuid",
+        COALESCE(array_agg(hn.node_uuid) FILTER (WHERE hn.node_uuid IS NOT NULL),'{}'::uuid[]) AS "nodeUuids"
+        FROM hosts h LEFT JOIN hosts_to_nodes hn ON hn.host_uuid=h.uuid GROUP BY h.uuid ORDER BY h.remark`,
+    ]);
+    return {response:{nodes,hosts}};
+  }
   async list(){return {response:await this.db.$queryRaw`SELECT id,remote_id,host_uuids,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,created_at,updated_at FROM dpi_check_jobs ORDER BY created_at DESC LIMIT 100`};}
   async one(id:string){const rows=await this.db.$queryRaw<any[]>`SELECT id,remote_id,host_uuids,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,results,created_at,updated_at FROM dpi_check_jobs WHERE id=${id}::uuid`;
     if(!rows.length)throw new NotFoundException();return {response:rows[0]};}
@@ -53,7 +64,7 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     if(!rows)throw new BadRequestException('Temporary account missing');
     const user=await this.users.getUserByUniqueFields({uuid:job.user_uuid});
     if(!user.isOk)throw new BadRequestException('Unable to load temporary user');
-    const hosts=await this.queries.execute(new GetHostsForUserQuery(user.response.tId,false,false));
+    const hosts=await this.queries.execute(new GetHostsForUserQuery(user.response.tId,false,true));
     if(!hosts.isOk)throw new BadRequestException('Temporary account has no accessible hosts');
     const selected=hosts.response.filter(h=>job.host_uuids.includes(h.uuid));
     if(selected.length!==job.host_uuids.length)throw new BadRequestException('Selected hosts not accessible to temporary user');
@@ -68,8 +79,8 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     await this.credentials.getKey();this.validateLocation(input.location);
     if(!Array.isArray(input.hosts)||!input.hosts.length||input.hosts.length>20||input.hosts.some(x=>!uuidPattern.test(x)))throw new BadRequestException('Select 1–20 hosts');
     const selected=[...new Set(input.hosts)];
-    const hosts=await this.db.hosts.findMany({where:{uuid:{in:selected},isDisabled:false,isHidden:false},select:{uuid:true,configProfileInboundUuid:true}});
-    if(hosts.length!==selected.length||hosts.some(h=>!h.configProfileInboundUuid))throw new BadRequestException('Some hosts are disabled or do not have an inbound');
+    const hosts=await this.db.hosts.findMany({where:{uuid:{in:selected},isDisabled:false},select:{uuid:true,configProfileInboundUuid:true}});
+    if(hosts.length!==selected.length||hosts.some(h=>!h.configProfileInboundUuid))throw new BadRequestException('Some hosts are disabled, missing, or do not have an inbound');
     // Keep this as a definite array: optional input must never leak into Job or SQL.
     let pops: number[] = input.pop_ids ?? [];
     if(input.pop_ids!==undefined && (!Array.isArray(input.pop_ids) || !input.pop_ids.length || input.pop_ids.length>100 || input.pop_ids.some(x=>!Number.isInteger(x)||x<=0)))throw new BadRequestException('Invalid PoP selection');
