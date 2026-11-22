@@ -128,7 +128,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
     const move = (index: number, delta: number) => {
         const actions = [...draft.actions]; [actions[index], actions[index + delta]] = [actions[index + delta], actions[index]]; change({ actions })
     }
-    const requiresNode = ['online_drop', 'node_offline'].includes(draft.trigger_type) || draft.actions.some(action => ['rotate_ip', 'hide_hosts', 'show_hosts', 'dpi_check'].includes(action.type))
+    const requiresNode = ['online_drop', 'online_value', 'node_offline'].includes(draft.trigger_type) || draft.actions.some(action => ['rotate_ip', 'hide_hosts', 'show_hosts', 'dpi_check'].includes(action.type))
     const nodeHosts = hosts.filter(host => host.node_uuids.includes(draft.node_uuid ?? ''))
     const check = async () => {
         setChecking(true); setError(''); setPreview(null)
@@ -161,6 +161,10 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                 <Select label={requiresNode ? 'Нода' : 'Нода (если нужна для действий)'} required={requiresNode} clearable={!requiresNode} searchable
                     placeholder="Выберите ноду" data={nodes.map(node => ({ value: node.uuid, label: nodeOptionLabel(node) }))} value={draft.node_uuid}
                     onChange={value => change({ node_uuid: value, actions: draft.actions.map(action => 'hosts' in action ? { ...action, hosts: [] } : action) })} />
+                {draft.trigger_type === 'online_value' && <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                    <Select label="Сравнение" allowDeselect={false} value={draft.online_operator} data={[{value:'gt',label:'Больше (>)'},{value:'lt',label:'Меньше (<)'},{value:'eq',label:'Равно (=)'}]} onChange={value=>change({online_operator: (value ?? 'lt') as AutomationInput['online_operator']})}/>
+                    <NumberInput label="Количество пользователей онлайн" min={0} max={1000000} allowDecimal={false} value={draft.online_value} onChange={value=>change({online_value:Number(value)})}/>
+                </SimpleGrid>}
                 {draft.trigger_type === 'online_drop' && <>
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
                         <NumberInput label="Падение онлайна, %" min={1} max={100} allowDecimal={false} value={draft.drop_percent} onChange={value => change({ drop_percent: Number(value) })} />
@@ -168,7 +172,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                     </SimpleGrid>
                     <Text size="sm" c="dimmed">Сравниваем с исходным онлайном за 5–30 минут до текущего замера. Нужны минимум 3 исходных замера. Подтверждённое отключение ноды тоже запускает это условие.</Text>
                 </>}
-                {['online_drop', 'node_offline'].includes(draft.trigger_type) && <>
+                {['online_drop', 'online_value', 'node_offline'].includes(draft.trigger_type) && <>
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
                         <NumberInput label="Условие сохраняется, минут" min={1} max={1440} allowDecimal={false} value={draft.duration_minutes} onChange={value => change({ duration_minutes: Number(value) })} />
                         <NumberInput label="Пауза между запусками, минут" min={1} max={10080} allowDecimal={false} value={draft.cooldown_minutes} onChange={value => change({ cooldown_minutes: Number(value) })} />
