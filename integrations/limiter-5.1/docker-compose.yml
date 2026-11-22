@@ -1,0 +1,61 @@
+# Launch as an ADDITIONAL Docker Compose stack on the same private Remnawave network.
+# This file is NOT included in the panel updater, so the existing installation remains unchanged.
+services:
+  remnadrop-limiter:
+    build:
+      context: ../..
+      dockerfile: integrations/limiter-5.1/Dockerfile
+    container_name: remnadrop-limiter
+    restart: unless-stopped
+    env_file:
+      - .env.limiter
+    environment:
+      REMNADROP_LIMITER_CONTROL_URL: http://remnawave:3000/api/limiter-bridge/runtime
+      REDIS_URL: redis://remnadrop-limiter-redis:6379
+      LANGUAGE: ru
+      TIMEZONE: Europe/Moscow
+      # Traffic and shared HWID run only if explicitly enabled on the panel page.
+      HEALTH_ADDR: ":8099"
+    depends_on:
+      remnadrop-limiter-redis:
+        condition: service_healthy
+    networks:
+      - remnawave-network
+      - limiter-internal
+    volumes:
+      - limiter-geoip:/app/geoip
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  remnadrop-limiter-redis:
+    image: valkey/valkey:8.1-alpine
+    container_name: remnadrop-limiter-redis
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes", "--loglevel", "warning"]
+    volumes:
+      - limiter-redis:/data
+    networks:
+      - limiter-internal
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  remnawave-network:
+    external: true
+    name: remnawave-network
+  limiter-internal:
+    internal: true
+
+volumes:
+  limiter-redis:
+  limiter-geoip:
