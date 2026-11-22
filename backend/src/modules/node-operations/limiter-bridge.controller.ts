@@ -1,4 +1,4 @@
-import { BadRequestException, Body, CanActivate, Controller, ExecutionContext, Get, Headers, HttpCode, Injectable, NotFoundException, Param, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, CanActivate, Controller, ExecutionContext, Get, HttpCode, Injectable, NotFoundException, Param, Post, Query, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { PrismaService } from '@common/database/prisma.service';
 import { NodesQueuesService } from '@queue/_nodes';
@@ -40,6 +40,9 @@ export class LimiterBridgeController {
    private readonly users:UsersService,private readonly limiter:LimiterService){}
  @Get('runtime')
  runtime(){return this.limiter.runtimeConfig();}
+ @Post('heartbeat')
+ @HttpCode(200)
+ heartbeat(@Body() body:{error?:string}){return this.limiter.heartbeat(body?.error);}
  @Get('api/nodes')
  async nodes(){
    const rows=await this.db.nodes.findMany({select:{uuid:true,name:true,address:true,isConnected:true,isDisabled:true,countryCode:true}});
@@ -157,7 +160,9 @@ export class LimiterBridgeController {
    @Body() body:{nodesUuids:string[]}){
    if(!/^\d{4}-\d{2}-\d{2}$/.test(start)||start!==end||!body||!Array.isArray(body.nodesUuids)||
      body.nodesUuids.length>300||body.nodesUuids.some(x=>!uuid.test(x)))throw new BadRequestException('Invalid node usage query');
-   const min=numericId(threshold??'1');
+   const minRaw=threshold??'0';
+   if(!/^\d{1,15}$/.test(minRaw))throw new BadRequestException('Invalid minimum traffic');
+   const min=BigInt(minRaw);
    if(body.nodesUuids.length===0)return {response:{nodes:[]}};
    const rows=await this.db.$queryRaw<Array<{uuid:string;user_id:string;total_bytes:string}>>(Prisma.sql`
      SELECT n.uuid,h.user_id::text,h.total_bytes::text
