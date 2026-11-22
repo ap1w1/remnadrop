@@ -70,7 +70,7 @@ export function CloudflareDnsPage(){
       setEdit(null);setIp('');await refresh();setNotice('IP записи изменён. Операция записана в журнал.')
     }catch(e){setError(msg(e))}finally{setBusy(false)}
   }
-  const rows=useMemo(()=>data.records.filter(r=>(!zone||r.zoneName===zone||!zone)&&
+  const rows=useMemo(()=>data.records.filter(r=>(!zone||r.zoneName===zone)&&
     [r.name,r.content,r.zoneName,...r.linkedHosts.flatMap(h=>[h.hostName,h.nodeName])].join(' ').toLowerCase().includes(search.toLowerCase())),[data.records,zone,search])
   return <Page title="Cloudflare DNS"><Stack gap="md">
     <Group justify="space-between" align="center" wrap="wrap">
@@ -168,7 +168,7 @@ export function CloudflareDnsPage(){
         <Alert color="yellow" title="Проверьте изменение">Управляющий запрос заменит только поле content одной записи. Если старый IP в Cloudflare уже изменился, операция не выполнится.</Alert>
         <Text size="sm">Домен: <b>{edit.name}</b> · {edit.type}</Text>
         <TextInput label="Текущий IP (ожидаемый)" readOnly value={edit.content}/>
-        <Select searchable label="Нода" data={[...new Map(edit.linkedHosts.map(h=>[h.nodeUuid,{value:h.nodeUuid,label:h.nodeName}])).values()]}
+        <Select searchable label="Нода" data={[...new Map(edit.linkedHosts.map(h=>([h.nodeUuid,{value:h.nodeUuid,label:h.nodeName}] as const))).values()]}
           value={nodeUuid} onChange={setNodeUuid}/>
         <TextInput label="Новый IP" placeholder={edit.type==='A'?'IPv4':'IPv6'} value={ip} onChange={e=>setIp(e.currentTarget.value)}/>
         <Group justify="end"><Button variant="default" onClick={()=>setEdit(null)}>Отмена</Button>
