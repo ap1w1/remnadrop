@@ -13,3 +13,6 @@ CREATE TABLE dpi_checker_billing_receipts (
     amount_usd double precision NOT NULL CHECK(amount_usd>0 AND amount_usd<10000000),
     created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Persist the upstream check response after recursive credential redaction.
+ALTER TABLE dpi_check_jobs ADD COLUMN remote_response jsonb;
