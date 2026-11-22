@@ -4,6 +4,7 @@ import { PrismaService } from '@common/database/prisma.service';
 import { NodesQueuesService } from '@queue/_nodes';
 import { UsersService } from '@modules/users/users.service';
 import { LimiterService } from './limiter.service';
+import { LimiterBridgeSecretsService } from './limiter-bridge-secrets.service';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 
@@ -14,9 +15,9 @@ function equalSecrets(a:string,b:string):boolean {
 }
 @Injectable()
 export class LimiterBridgeGuard implements CanActivate {
+ constructor(private readonly secrets:LimiterBridgeSecretsService){}
  canActivate(ctx:ExecutionContext){
-   const token=process.env.REMNADROP_LIMITER_BRIDGE_TOKEN;
-   if(!token||token.length<32)throw new UnauthorizedException('Limiter bridge is disabled');
+   const token=this.secrets.apiToken;
    const authorization=(ctx.switchToHttp().getRequest<Request>().headers.authorization??'');
    if(!authorization.startsWith('Bearer ')||!equalSecrets(authorization.slice(7),token))
      throw new UnauthorizedException('Invalid Limiter bridge credential');
