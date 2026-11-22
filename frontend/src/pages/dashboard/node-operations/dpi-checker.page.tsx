@@ -1,21 +1,25 @@
-import { Alert, Badge, Button, Card, Divider, Group, MultiSelect, NumberFormatter, PasswordInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Text, Title, Tooltip } from '@mantine/core'
+import { Alert, Badge, Button, Card, Group, MultiSelect, NumberFormatter, PasswordInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Text, Title } from '@mantine/core'
 import { useCallback, useEffect, useState } from 'react'
 import { TbBrandTelegram, TbCheck, TbCoin, TbKey, TbPlayerPlay, TbRefresh, TbShieldSearch } from 'react-icons/tb'
 import { instance } from '@shared/api/axios'
 import { Page } from '@shared/ui'
 import { DpiCheckerLogo } from '@shared/ui/logos/dpi-checker-logo'
+import { nodeOptionLabel, type NodeOptionData } from '@shared/utils/misc/node-option-label'
+import { DpiDetailsModal, type DpiHostChoice, type DpiJobResult } from './dpi-details-modal'
 
 type Setting = { configured: boolean; source: string; updatedAt: string|null }
-type Host = { uuid: string; remark: string; isDisabled: boolean; isHidden: boolean }
-type Job = { id: string; remote_id: number|null; location: string; host_uuids: string[]; status: string; progress_done: number; progress_total: number; estimated_cost: number|null; actual_cost: number|null; error?: string|null; created_at: string; results?: Array<{host?:string;pop_name?:string;connected?:boolean;latency_ms?:number|null;error?:string}> }
+type Host = DpiHostChoice
+type Job = DpiJobResult
 type Pop = { id: number; name?: string; city?: string; region?: string; operator?: string }
-const regions=[{value:'russia',label:'Россия'},{value:'russia_mobile',label:'Россия — мобильные сети'},{value:'china',label:'Китай'},{value:'iran',label:'Иран'},{value:'turkmenistan',label:'Туркменистан'}]
+const regions=[{value:'russia',label:'🇷🇺 Россия'},{value:'russia_mobile',label:'🇷🇺 Россия — мобильные сети'},{value:'china',label:'🇨🇳 Китай'},{value:'iran',label:'🇮🇷 Иран'},{value:'turkmenistan',label:'🇹🇲 Туркменистан'}]
 const nameFor=(value:string)=>regions.find(r=>r.value===value)?.label??value
 const statusFor=(value:string)=>({prepared:'Ожидает подтверждения',pending:'В очереди',running:'Выполняется',completed:'Завершена',failed:'Ошибка',cancelled:'Отменена'} as Record<string,string>)[value]??value
 function getError(e:unknown){const err=e as {response?:{data?:{message?:string}}};return err.response?.data?.message??'Не удалось выполнить запрос к серверу'}
 export function DpiCheckerPage(){
  const [settings,setSettings]=useState<Setting|null>(null),[balance,setBalance]=useState<number|null>(null),[apiKey,setApiKey]=useState('')
- const [hosts,setHosts]=useState<Host[]>([]),[selected,setSelected]=useState<string[]>([]),[location,setLocation]=useState<string|null>('russia'),[optimal,setOptimal]=useState(true)
+ const [hosts,setHosts]=useState<Host[]>([]),[nodes,setNodes]=useState<NodeOptionData[]>([]),[selected,setSelected]=useState<string[]>([])
+ const [nodeUuid,setNodeUuid]=useState<string|null>(null),[allNodeHosts,setAllNodeHosts]=useState(true)
+ [location,setLocation]=useState<string|null>('russia'),[optimal,setOptimal]=useState(true)
  const [pops,setPops]=useState<Pop[]>([]),[popIds,setPopIds]=useState<string[]>([]),[jobs,setJobs]=useState<Job[]>([]),[details,setDetails]=useState<Job|null>(null)
  const [busy,setBusy]=useState(false),[keyBusy,setKeyBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
  const refresh=useCallback(async()=>{
@@ -23,16 +27,18 @@ export function DpiCheckerPage(){
    setSettings(configuration.data.response as Setting);setJobs(history.data.response as Job[])
    if(configuration.data.response.configured){try{const account=await instance.get('/api/dpi-checker/profile');setBalance(account.data.response.balance==null?null:Number(account.data.response.balance))}catch{setBalance(null)}}else setBalance(null)
  },[])
- useEffect(()=>{let mounted=true;void Promise.all([refresh(),instance.get('/api/hosts')]).then(([,r])=>{if(mounted)setHosts(r.data.response)}).catch(e=>{if(mounted)setError(getError(e))});return()=>{mounted=false}},[refresh])
+ useEffect(()=>{let mounted=true;void Promise.all([refresh(),instance.get('/api/dpi-checker/host-options')]).then(([,r])=>{if(mounted){setHosts(r.data.response.hosts);setNodes(r.data.response.nodes)}}).catch(e=>{if(mounted)setError(getError(e))});return()=>{mounted=false}},[refresh])
  useEffect(()=>{const timer=window.setInterval(()=>void refresh().catch(()=>{}),15000);return()=>window.clearInterval(timer)},[refresh])
  useEffect(()=>{if(optimal||!location)return;let active=true;void instance.get('/api/dpi-checker/pops',{params:{location}}).then(r=>{if(active){const data=r.data.response;setPops(Array.isArray(data)?data:Array.isArray(data?.pops)?data.pops:[]);setPopIds([])}}).catch(e=>{if(active)setError(getError(e))});return()=>{active=false}},[location,optimal])
  const saveKey=async()=>{setKeyBusy(true);setError('');try{await instance.put('/api/dpi-checker/settings',{apiKey});setApiKey('');await refresh();setNotice('API-ключ успешно проверен и сохранён на сервере.')}catch(e){setError(getError(e))}finally{setKeyBusy(false)}}
+ const eligibleHosts=hosts.filter(h=>!h.isDisabled&&!!h.inboundUuid&&(!nodeUuid||h.nodeUuids.includes(nodeUuid)))
+ const selectedForRun=nodeUuid&&allNodeHosts?eligibleHosts.map(h=>h.uuid):selected.filter(id=>eligibleHosts.some(h=>h.uuid===id))
  const runCheck=async()=>{
-   if(!selected.length||!location||busy)return
+   if(!selectedForRun.length||selectedForRun.length>100||!location||busy)return
    setBusy(true);setError('')
    let preparedId:string|null=null
    try{
-     const prepared=await instance.post('/api/dpi-checker/checks/prepare',{hosts:selected,location,...(!optimal?{pop_ids:popIds.map(Number)}:{})})
+     const prepared=await instance.post('/api/dpi-checker/checks/prepare',{hosts:selectedForRun,location,...(!optimal?{pop_ids:popIds.map(Number)}:{})})
      preparedId=prepared.data.response.id as string
      if(prepared.data.response.estimate?.affordable===false)throw new Error('Недостаточно средств на балансе DPI Checker')
      await instance.post('/api/dpi-checker/checks/'+preparedId+'/start')
@@ -60,19 +66,26 @@ export function DpiCheckerPage(){
       </Title><Text c="dimmed" size="sm">{balance===null?'Не удалось получить баланс. Проверьте ключ и подключение.':'Актуальный баланс аккаунта по данным API /profile'}</Text><Text size="xs" c="dimmed">Проверки платные. Стоимость рассчитывается автоматически при запуске.</Text></Stack></Card>
     </SimpleGrid>
     <Card withBorder radius="md" padding="lg"><Stack gap="md"><Group gap="xs"><TbShieldSearch size={20}/><Title order={4}>Новая проверка</Title></Group>
-      <MultiSelect searchable clearable label="Хосты для проверки" description="Будет создана временная учётная запись с VLESS-ключами выбранных хостов." placeholder="Выберите хосты" data={hosts.filter(h=>!h.isDisabled&&!h.isHidden).map(h=>({value:h.uuid,label:h.remark}))} value={selected} onChange={value=>{setSelected(value);}} maxValues={20} />
+      <Select label="Нода для проверки" searchable clearable placeholder="Все ноды · выбрать хосты вручную"
+        data={nodes.map(node=>({value:node.uuid,label:nodeOptionLabel(node)}))} value={nodeUuid}
+        onChange={value=>{setNodeUuid(value);setSelected([]);setAllNodeHosts(!!value)}}/>
+      {nodeUuid&&<Switch label="Проверить все активные хосты ноды" description={`Включает скрытые хосты с действующим inbound (${eligibleHosts.length}).`}
+        checked={allNodeHosts} onChange={event=>setAllNodeHosts(event.currentTarget.checked)}/>}
+      {(!nodeUuid||!allNodeHosts)&&<MultiSelect searchable clearable label="Хосты для проверки"
+        description="Скрытые хосты доступны для диагностики и остаются невидимыми для подписчиков."
+        placeholder="Выберите хосты" data={eligibleHosts.map(host=>({value:host.uuid,label:`${host.remark} · ${host.address}${host.isHidden?' · скрыт':''}`}))}
+        value={selected} onChange={setSelected} maxValues={100}/>}
+      {selectedForRun.length>100&&<Alert color="orange">Выбрано более 100 хостов. Укажите часть хостов.</Alert>}
+      <Text size="xs" c="dimmed">Хостов к проверке: {selectedForRun.length}. Отключённые и не имеющие inbound исключены.</Text>
       <SimpleGrid cols={{base:1,sm:2}}><Select label="Регион" data={regions} value={location} onChange={value=>{setLocation(value);}} allowDeselect={false}/><Stack justify="center"><Switch label="Оптимальные точки проверки" description="Если выключить, можно выбрать конкретные PoP." checked={optimal} onChange={e=>{setOptimal(e.currentTarget.checked);}}/></Stack></SimpleGrid>
       {!optimal&&<MultiSelect label="Точки присутствия (PoP)" searchable data={pops.map(p=>({value:String(p.id),label:[p.name??p.city??p.region??`PoP ${p.id}`,p.operator].filter(Boolean).join(' · ')}))} value={popIds} onChange={v=>{setPopIds(v);}} placeholder="Выберите точки" />}
-      <Group justify="end"><Button leftSection={<TbPlayerPlay size={17}/>} onClick={()=>void runCheck()} loading={busy} disabled={!settings?.configured||!location||!selected.length||(!optimal&&!popIds.length)}>Запустить проверку</Button></Group>
+      <Group justify="end"><Button leftSection={<TbPlayerPlay size={17}/>} onClick={()=>void runCheck()} loading={busy} disabled={!settings?.configured||!location||!selectedForRun.length||selectedForRun.length>100||(!optimal&&!popIds.length)}>Запустить проверку</Button></Group>
       <Text size="xs" c="dimmed">Проверка платная: расчёт стоимости выполняется автоматически перед запуском без отдельного подтверждения. Итоговая сумма доступна в истории.</Text>
     </Stack></Card>
     <Card withBorder radius="md" padding="lg"><Group justify="space-between" mb="md"><Title order={4}>Последние проверки</Title><Text size="sm" c="dimmed">Автообновление каждые 15 секунд</Text></Group><Table.ScrollContainer minWidth={700}><Table highlightOnHover verticalSpacing="sm"><Table.Thead><Table.Tr><Table.Th>Дата</Table.Th><Table.Th>Регион</Table.Th><Table.Th>Хосты</Table.Th><Table.Th>Статус / прогресс</Table.Th><Table.Th>Стоимость</Table.Th><Table.Th>Результаты</Table.Th></Table.Tr></Table.Thead><Table.Tbody>
     {jobs.map(j=><Table.Tr key={j.id}><Table.Td><Text size="sm">{new Date(j.created_at).toLocaleString('ru-RU')}</Text></Table.Td><Table.Td>{nameFor(j.location)}</Table.Td><Table.Td>{j.host_uuids.length}</Table.Td><Table.Td><Stack gap={5}><Badge color={j.status==='completed'?'teal':j.status==='failed'?'red':'blue'} variant="light">{statusFor(j.status)}</Badge><Progress value={pct(j)} color={j.status==='failed'?'red':'cyan'} size="sm"/><Text c="dimmed" size="xs">{j.progress_done} / {j.progress_total}</Text></Stack></Table.Td><Table.Td>${Number(j.actual_cost??j.estimated_cost??0).toFixed(2)}</Table.Td><Table.Td><Group gap="xs"><Button variant="subtle" size="compact-sm" onClick={()=>void openDetails(j.id)}>Подробнее</Button>{['prepared','pending'].includes(j.status)&&<Button variant="subtle" color="red" size="compact-sm" onClick={()=>void cancel(j.id)}>Отменить</Button>}</Group></Table.Td></Table.Tr>)}
     {!jobs.length&&<Table.Tr><Table.Td colSpan={6}><Text c="dimmed" ta="center" py="lg">Проверок пока нет</Text></Table.Td></Table.Tr>}
     </Table.Tbody></Table></Table.ScrollContainer></Card>
-    {details&&<Card withBorder radius="md" padding="lg"><Group justify="space-between"><Title order={4}>Результаты проверки</Title><Button variant="subtle" size="compact-sm" onClick={()=>setDetails(null)}>Закрыть</Button></Group><Divider my="md"/><Text size="sm" c="dimmed" mb="md">ID {details.remote_id??details.id}. Проверки из нескольких точек могут давать разные результаты.</Text>
-     {details.error&&<Alert color="red">{details.error}</Alert>}
-     <Table.ScrollContainer minWidth={500}><Table><Table.Thead><Table.Tr><Table.Th>Хост</Table.Th><Table.Th>Точка проверки</Table.Th><Table.Th>Доступ</Table.Th><Table.Th>Задержка</Table.Th></Table.Tr></Table.Thead><Table.Tbody>{(details.results??[]).map((r,i)=><Table.Tr key={i}><Table.Td>{r.host??'—'}</Table.Td><Table.Td>{r.pop_name??'—'}</Table.Td><Table.Td><Tooltip label={r.error??''} disabled={!r.error}><Badge color={r.connected?'teal':'red'}>{r.connected?'Доступен':'Нет соединения'}</Badge></Tooltip></Table.Td><Table.Td>{r.latency_ms==null?'—':`${r.latency_ms} мс`}</Table.Td></Table.Tr>)}{!details.results?.length&&<Table.Tr><Table.Td colSpan={4}><Text c="dimmed">Результаты пока не получены</Text></Table.Td></Table.Tr>}</Table.Tbody></Table></Table.ScrollContainer>
-    </Card>}
+    <DpiDetailsModal job={details} hosts={hosts} nodes={nodes} onClose={()=>setDetails(null)}/>
  </Stack></Page>
 }
