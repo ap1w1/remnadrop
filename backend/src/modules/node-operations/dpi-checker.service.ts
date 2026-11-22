@@ -36,6 +36,54 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
   async api(path:string,init:RequestInit={},authenticated=true):Promise<any>{
     return this.apiWithKey(path,authenticated?await this.credentials.getKey():'',init);
   }
+  async billingSettings(){
+    const rows=await this.db.$queryRaw<{enabled:boolean}[]>`SELECT enabled FROM dpi_checker_billing_settings WHERE id=1`;
+    return {response:{enabled:rows[0]?.enabled===true}};
+  }
+  async setBillingSettings(input:{enabled:boolean}){
+    if(!input || typeof input.enabled!=='boolean') throw new BadRequestException('Укажите состояние записи трат');
+    const enabled=input.enabled;
+    // Setting the option and registering the provider is one DB transaction.
+    await this.db.$executeRaw`
+      WITH config AS (
+        UPDATE dpi_checker_billing_settings
+        SET enabled=${enabled},updated_at=CASE WHEN enabled IS DISTINCT FROM ${enabled} THEN now() ELSE updated_at END
+        WHERE id=1 RETURNING enabled
+      )
+      INSERT INTO infra_providers(name,favicon_link,login_url)
+      SELECT 'DPI//CHECKER','https://i.ibb.co/5WcD8CyW/2026-11-23-021501444.png',
+        'https://t.me/dpi_checker_robot?start=p453722'
+      FROM config WHERE enabled
+      ON CONFLICT(name) DO UPDATE SET favicon_link=EXCLUDED.favicon_link,login_url=EXCLUDED.login_url`;
+    return this.billingSettings();
+  }
+  private async recordExpenses(){
+    // The opt-in timestamp excludes checks that were completed before enabling.
+    // Each job is charged at most once, even when two schedulers tick concurrently.
+    await this.db.$executeRaw`
+      WITH eligible AS MATERIALIZED (
+        SELECT j.id,j.actual_cost::float8 AS amount FROM dpi_check_jobs j
+        CROSS JOIN dpi_checker_billing_settings s
+        WHERE s.enabled AND j.status='completed' AND j.actual_cost>0
+          AND j.created_at>=s.updated_at
+          AND NOT EXISTS (SELECT 1 FROM dpi_checker_billing_receipts r WHERE r.job_id=j.id)
+        ORDER BY j.created_at LIMIT 100
+      ), provider AS (
+        INSERT INTO infra_providers(name,favicon_link,login_url)
+        SELECT 'DPI//CHECKER','https://i.ibb.co/5WcD8CyW/2026-11-23-021501444.png',
+          'https://t.me/dpi_checker_robot?start=p453722'
+        WHERE EXISTS (SELECT 1 FROM eligible)
+        ON CONFLICT(name) DO UPDATE SET favicon_link=EXCLUDED.favicon_link,login_url=EXCLUDED.login_url
+        RETURNING uuid
+      ), receipts AS (
+        INSERT INTO dpi_checker_billing_receipts(job_id,record_uuid,amount_usd)
+        SELECT id,gen_random_uuid(),amount FROM eligible
+        ON CONFLICT(job_id) DO NOTHING
+        RETURNING record_uuid,amount_usd
+      )
+      INSERT INTO infra_billing_history(uuid,provider_uuid,amount,billed_at)
+      SELECT r.record_uuid,p.uuid,r.amount_usd,now() FROM receipts r CROSS JOIN provider p`;
+  }
   async profile() {
     const result=await this.api('/profile');
     const balance=result?.balance??result?.usd_balance??(await this.api('/quota'))?.balance;
@@ -164,5 +212,6 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     const jobs=await this.db.$queryRaw<Job[]>`SELECT * FROM dpi_check_jobs WHERE (remote_id IS NOT NULL AND status IN ('pending','running')) OR (user_uuid IS NOT NULL AND created_at<now()-interval '45 minutes') ORDER BY created_at LIMIT 30`;
     for(const job of jobs){try{if(job.remote_id&&['pending','running'].includes(job.status)){const status=await this.refresh(job.id,job.remote_id);if(['completed','failed','cancelled'].includes(status))await this.cleanup(job);}if(job.user_uuid&&Date.now()-new Date(job.created_at).getTime()>45*60000){await this.cleanup(job);await this.db.$executeRaw`UPDATE dpi_check_jobs SET status='failed',error='Temporary account expired' WHERE id=${job.id}::uuid AND status IN ('prepared','pending','running')`;}}
     catch(err){this.logger.warn(`DPI check ${job.id}: ${String(err)}`);}}
+    await this.recordExpenses().catch(err=>this.logger.warn('DPI billing: '+String(err)));
   }catch(err){this.logger.warn(`DPI poll: ${String(err)}`);}finally{this.busy=false;}}
 }
