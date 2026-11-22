@@ -39,6 +39,9 @@ ENV NODE_ENV=production
 # Original upstream Limiter 5.1.0 binary is embedded in the SAME panel image.
 # It is started and stopped by NestJS LimiterRunnerService, not another container.
 COPY --from=limiter-upstream /usr/local/bin/remnawave-limiter /usr/local/bin/remnawave-limiter
+# Go uses the OS trust store for Telegram/MaxMind HTTPS. node:slim removes
+# ca-certificates after installing Node, whose own bundled roots are separate.
+COPY --from=limiter-upstream /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 # Match the upstream Go image's timezone database for daily reports and Telegram notices.
 COPY --from=limiter-upstream /usr/share/zoneinfo /usr/share/zoneinfo
 RUN mkdir -p /var/lib/remnawave/limiter/geoip \

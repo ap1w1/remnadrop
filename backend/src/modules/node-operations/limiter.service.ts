@@ -42,7 +42,7 @@ function normalizeSettings(input:unknown):LimiterSettings{
    checkIntervalSeconds:[30,3600],activeWindowSeconds:[60,3600],
    tolerance:[0,20],toleranceMultiplier:[0,100],defaultDeviceLimit:[0,100],
    violationThreshold:[1,50],thresholdWindowSeconds:[60,86400],
-   cooldownSeconds:[0,86400],autoRestoreMinutes:[0,525600],
+   cooldownSeconds:[1,86400],autoRestoreMinutes:[0,525600],
    subnetPrefixV4:[8,32],trafficSpikeFactor:[1.5,100],trafficSpikeMinGb:[1,1000000],
    trafficHeavyGb:[0,1000000],trafficHeavyDays:[1,7],sharedHwidHistoryDays:[0,365]
  } as const;

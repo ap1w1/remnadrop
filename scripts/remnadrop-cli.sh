@@ -36,7 +36,7 @@ snapshot() {
       rm -rf "$TEMP"
       fail "Could not export Git snapshot"
     fi
-    for file in Dockerfile.dev upgrade-fork.sh migrate-2.8.1.sh recover-export.py; do
+    for file in Dockerfile.dev upgrade-fork.sh migrate-2.8.1.sh recover-export.py scripts/compose-files.py; do
       [ -f "$TEMP/$file" ] || fail "Missing $file in Git snapshot"
     done
     printf '%s\n' "$SHA" > "$TEMP/.remnadrop-source-sha"
@@ -65,7 +65,7 @@ HELP
   status)
     need git; need docker; check_repo
     say "Git HEAD: $(git -C "$REPO" rev-parse --short=12 HEAD)"
-    docker inspect remnawave --format 'Image: {{.Config.Image}} | Running: {{.State.Running}} | Health: {{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' ||
+    docker inspect remnawave --format 'Image: {{.Config.Image}} | ID: {{.Image}} | Running: {{.State.Running}} | Health: {{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' ||
       say 'Panel container not found'
     [ ! -f "$INSTALL_DIR/.last-ops-update-backup" ] ||
       say "Last backup: $(cat "$INSTALL_DIR/.last-ops-update-backup")"
@@ -99,9 +99,16 @@ HELP
     IMAGE="panel-fork:2.8.1-git-$SHORTSHA"
     say "Applying update using $IMAGE"
     INSTALL_DIR="$INSTALL_DIR" IMAGE="$IMAGE" bash "$RELEASE/upgrade-fork.sh"
-    say "Update successful: $IMAGE"
+    # Do not report success for an old healthy container with the same tag.
+    EXPECTED_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+    RUNNING_IMAGE_ID="$(docker inspect -f '{{.Image}}' remnawave)"
+    [[ "$EXPECTED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'Cannot identify the target image'
+    [ "$RUNNING_IMAGE_ID" = "$EXPECTED_IMAGE_ID" ] || fail "Panel image ID mismatch: $RUNNING_IMAGE_ID; expected $EXPECTED_IMAGE_ID"
+    [ "$(docker inspect -f '{{.State.Running}}/{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' remnawave)" = true/healthy ] ||
+      fail 'Panel is not running and healthy after update'
     # Refresh installed CLI after successful update.
-    install -m 755 "$REPO/scripts/remnadrop-cli.sh" /usr/local/bin/remnadrop
+    install -m 755 "$RELEASE/scripts/remnadrop-cli.sh" /usr/local/bin/remnadrop
+    say "Update successful: $IMAGE ($RUNNING_IMAGE_ID)"
     ;;
   *)
     fail "Unknown command '$ACTION'. Use: remnadrop help"

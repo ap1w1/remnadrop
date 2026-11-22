@@ -132,7 +132,7 @@ export function LimiterPage(){
        {num('defaultDeviceLimit','Лимит по умолчанию',0,100,'0 — без ограничений, если у пользователя не задан HWID')}
        {num('violationThreshold','Повторений до действия',1,30)}
        {num('thresholdWindowSeconds','Окно нарушений, сек',60,86400)}
-       {num('cooldownSeconds','Кулдаун, сек',30,86400)}
+       {num('cooldownSeconds','Кулдаун, сек',1,86400)}
        {num('autoRestoreMinutes','Автовключение, мин',0,10080,'0 — не включать автоматически')}
      </SimpleGrid>
      <SimpleGrid cols={{base:1,sm:2,lg:3}}>
@@ -199,6 +199,6 @@ export function LimiterPage(){
        </Table.Tbody>
      </Table></Table.ScrollContainer>
    </Stack></Card>
-   <Text size="xs" c="dimmed">Limiter 5.1.0 запускается внутри контейнера remnawave после включения. Используется Valkey панели через Unix-сокет (отдельная Redis DB 8). Автоблокировка требует сохраняемого Redis (AOF или RDB). События поступают в PostgreSQL через внутренний подписанный вебхук.</Text>
+   <Text size="xs" c="dimmed">Limiter 5.1.0 запускается внутри контейнера remnawave после включения. Используется подключение Valkey панели через Unix-сокет или TCP (отдельная Redis DB 8). Автоблокировка требует сохраняемого Redis (AOF или RDB). События поступают в PostgreSQL через внутренний подписанный вебхук.</Text>
  </Stack></Page>
 }

@@ -16,7 +16,7 @@ for executable in docker python3 flock df awk; do
   command -v "$executable" >/dev/null 2>&1 || fail "Missing $executable"
 done
 [[ -d "$INSTALL_DIR" ]] || fail "Installation directory does not exist: $INSTALL_DIR"
-[[ -f "$SOURCE/Dockerfile.dev" && -f "$SOURCE/migrate-2.8.1.sh" && -f "$SOURCE/recover-export.py" ]] || fail 'Incomplete source archive'
+[[ -f "$SOURCE/Dockerfile.dev" && -f "$SOURCE/migrate-2.8.1.sh" && -f "$SOURCE/recover-export.py" && -f "$SOURCE/scripts/compose-files.py" ]] || fail 'Incomplete source archive'
 
 docker info >/dev/null 2>&1 || fail 'Docker daemon unavailable'
 docker inspect remnawave >/dev/null 2>&1 || fail 'Existing remnawave container missing'
@@ -57,12 +57,22 @@ say "Backup directory: $BACKUP_DIR"
 say 'Building fresh image (running panel is not touched)...'
 docker build --progress=plain -f "$SOURCE/Dockerfile.dev" -t "$IMAGE" "$SOURCE" \
   2>&1 | tee "$BACKUP_DIR/docker-build.log"
+# A tag can be reused while the old container still refers to a different image.
+# Compare IDs returned by this daemon, not BuildKit's config/manifest digests.
+TARGET_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+[[ "$TARGET_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'Cannot identify the built image'
+printf '%s\n' "$TARGET_IMAGE_ID" > "$BACKUP_DIR/target-image-id"
+say "Built image ID: $TARGET_IMAGE_ID"
 
 # This explicit marker prevents retagging a stale build by accident.
 say 'Verifying new frontend and migration files...'
 docker run --rm --network none --entrypoint sh "$IMAGE" -ec '
   test -f /app/frontend/index.html
   test -x /usr/local/bin/remnawave-limiter
+  test -s /etc/ssl/certs/ca-certificates.crt
+  test -s /app/prisma/migrations/20261122000100_integrations_limiter_cloudflare/migration.sql
+  grep -RqlF "/dashboard/tools/limiter" /app/frontend
+  grep -RqlF "/dashboard/tools/cloudflare-dns" /app/frontend
   test -f /app/prisma/migrations/20261120233000_monitoring_retention/migration.sql
   grep -RqlF "t.me/dpi_checker_robot?start=p453722" /app/frontend
   grep -RqlF "Документация API" /app/frontend
@@ -103,10 +113,12 @@ python3 "$SOURCE/recover-export.py" "$BACKUP_DIR"
 [[ -s "$BACKUP_DIR/rollback-image" ]] || fail 'Rollback image not created'
 
 [[ "$(docker inspect -f '{{.Id}}' remnawave)" == "$CONTAINER_ID" ]] || fail 'Panel container changed after export'
+[[ "$(docker image inspect -f '{{.Id}}' "$IMAGE")" == "$TARGET_IMAGE_ID" ]] || fail 'Target image tag changed after build; refusing to switch'
 
 say 'Switching to the new image, with database backup, test restore, and migrations...'
 set +e
 PANEL_ROLLBACK_IMAGE="$(cat "$BACKUP_DIR/rollback-image")" \
+  PANEL_TARGET_IMAGE_ID="$TARGET_IMAGE_ID" \
   bash "$SOURCE/migrate-2.8.1.sh" "$INSTALL_DIR" "$IMAGE" --update \
   2>&1 | tee "$BACKUP_DIR/migration.log"
 RESULT=${PIPESTATUS[0]}
@@ -116,16 +128,22 @@ if [[ "$RESULT" -ne 0 ]]; then
 fi
 
 say 'Checking running container...'
+CURRENT_CONTAINER_ID="$(docker inspect -f '{{.Id}}' remnawave)"
+[[ "$CURRENT_CONTAINER_ID" != "$CONTAINER_ID" ]] || fail 'Panel container was not recreated'
 CURRENT_IMAGE="$(docker inspect -f '{{.Config.Image}}' remnawave)"
 [[ "$CURRENT_IMAGE" == "$IMAGE" ]] || fail "Unexpected running image $CURRENT_IMAGE"
+CURRENT_IMAGE_ID="$(docker inspect -f '{{.Image}}' remnawave)"
+[[ "$CURRENT_IMAGE_ID" == "$TARGET_IMAGE_ID" ]] || fail "Wrong running image ID: $CURRENT_IMAGE_ID; expected $TARGET_IMAGE_ID"
 for attempt in $(seq 1 15); do
-  HEALTH="$(docker inspect -f '{{.State.Health.Status}}' remnawave)"
+  [[ "$(docker inspect -f '{{.State.Running}}' remnawave)" == true ]] || fail 'Panel container is not running; inspect logs and backups'
+  HEALTH="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' remnawave)"
   [[ "$HEALTH" == healthy ]] && break
   sleep 2
 done
 [[ "${HEALTH:-}" == healthy ]] || fail 'Container did not become healthy; inspect logs and backups'
+[[ "$(docker inspect -f '{{.Image}}' remnawave)" == "$TARGET_IMAGE_ID" ]] || fail 'Panel image changed during verification'
 
-say "SUCCESS: $IMAGE is running and healthy"
+say "SUCCESS: $IMAGE ($TARGET_IMAGE_ID) is running and healthy"
 say "Backups: $BACKUP_DIR"
 if command -v systemctl >/dev/null 2>&1 && [[ -f "$SOURCE/backup-agent/install-agent.sh" ]]; then
   say 'Installing host-side backup worker and independent schedules...'
@@ -139,3 +157,4 @@ else
   say 'WARNING: systemd not found; backup-agent must be installed and scheduled manually.'
 fi
 say 'Check the browser with Ctrl+Shift+R. Node TLS errors require separate diagnostics.'
+

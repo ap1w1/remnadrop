@@ -2,8 +2,8 @@ import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } fro
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import Redis from 'ioredis';
+import { join, resolve } from 'node:path';
+import Redis, { type RedisOptions } from 'ioredis';
 import { LimiterService } from './limiter.service';
 import { LimiterBridgeSecretsService } from './limiter-bridge-secrets.service';
 
@@ -14,7 +14,6 @@ import { LimiterBridgeSecretsService } from './limiter-bridge-secrets.service';
 export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger=new Logger(LimiterRunnerService.name);
   private readonly binary='/usr/local/bin/remnawave-limiter';
-  private readonly socket='/var/run/valkey/valkey.sock';
   private readonly dir='/var/lib/remnawave/limiter';
   private interval?:NodeJS.Timeout;
   private initial?:NodeJS.Timeout;
@@ -25,7 +24,7 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
   private nextStartAt=0;
   constructor(private readonly limiter:LimiterService,private readonly secrets:LimiterBridgeSecretsService){}
   status():{response:{embedded:boolean;running:boolean;pid:number|null;version:string;redisDatabase:number}}{
-    return {response:{embedded:true,running:!!this.child&&this.child.exitCode===null,
+    return {response:{embedded:true,running:this.isRunning(),
       pid:this.child?.pid??null,version:'5.1.0',redisDatabase:8}};
   }
   onApplicationBootstrap():void {
@@ -39,17 +38,39 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
     if(this.initial)clearTimeout(this.initial);
     await this.stop();
   }
+  private isRunning(child=this.child):boolean{
+    return !!child?.pid&&child.exitCode===null&&child.signalCode===null;
+  }
   private async stop():Promise<void>{
     const old=this.child;this.child=undefined;this.fingerprint='';
-    if(!old||old.exitCode!==null)return;
+    if(!old||!this.isRunning(old))return;
     const exited=new Promise<void>(resolve=>old.once('exit',()=>resolve()));
     old.kill('SIGTERM');
     await Promise.race([exited,new Promise<void>(resolve=>setTimeout(resolve,6000))]);
-    if(old.exitCode===null)old.kill('SIGKILL');
+    if(this.isRunning(old))old.kill('SIGKILL');
   }
-  private async checkValkey(auto:boolean):Promise<void>{
-    if(!existsSync(this.socket))throw new Error('Valkey Unix socket is missing in remnawave container');
-    const client=new Redis({path:this.socket,db:8,lazyConnect:true,maxRetriesPerRequest:1,connectTimeout:3000,retryStrategy:()=>null});
+  private redisConnection():{url:string;options:RedisOptions}{
+    // Reuse the panel's existing Redis transport and credentials, but isolate
+    // Limiter state in DB 8. Development and older installations may use TCP.
+    const password=process.env.REDIS_PASSWORD||undefined;
+    if(process.env.REDIS_SOCKET){
+      const path=resolve(process.env.REDIS_SOCKET);
+      const auth=password?':'+encodeURIComponent(password)+'@':'';
+      const encodedPath=path.split('/').map(encodeURIComponent).join('/');
+      return {url:'unix://'+auth+encodedPath+'?db=8',options:{path,password,db:8}};
+    }
+    const host=process.env.REDIS_HOST||'';
+    const port=Number(process.env.REDIS_PORT);
+    if(!host||!Number.isInteger(port)||port<1||port>65535)
+      throw new Error('Configure REDIS_SOCKET or REDIS_HOST and REDIS_PORT for the panel');
+    const urlHost=host.includes(':')&&!host.startsWith('[')?'['+host+']':host;
+    const url=new URL('redis://'+urlHost+':'+port+'/8');
+    if(password)url.password=password;
+    return {url:url.toString(),options:{host:host.replace(/^\[|\]$/g,''),port,password,db:8}};
+  }
+  private async checkValkey(auto:boolean,options:RedisOptions):Promise<void>{
+    if(options.path&&!existsSync(options.path))throw new Error('Configured Valkey Unix socket is missing in remnawave container');
+    const client=new Redis({...options,lazyConnect:true,maxRetriesPerRequest:1,connectTimeout:3000,retryStrategy:()=>null});
     client.on('error',()=>{});
     try{
       await client.connect();await client.ping();
@@ -61,7 +82,7 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
       }
     }finally{client.disconnect();}
   }
-  private environment(settings:Record<string,string>):NodeJS.ProcessEnv{
+  private environment(settings:Record<string,string>,redisUrl:string):NodeJS.ProcessEnv{
     // Do not inherit PostgreSQL, Cloudflare, JWT or panel secrets in the Go process.
     const env:NodeJS.ProcessEnv={PATH:process.env.PATH,HOME:this.dir,TMPDIR:'/tmp'};
     for(const [key,value] of Object.entries(settings)){
@@ -74,7 +95,7 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
     env.WEBHOOK_URL=url+'/limiter-webhook';
     env.WEBHOOK_SECRET=this.secrets.webhookSecret;
     env.WEBHOOK_SECRET_HEADER='false';
-    env.REDIS_URL='unix:///var/run/valkey/valkey.sock?db=8';
+    env.REDIS_URL=redisUrl;
     env.LANGUAGE='ru';
     env.TIMEZONE=env.TIMEZONE||'Europe/Moscow';
     env.ASN_DATABASE_PATH=join(this.dir,'geoip','GeoLite2-ASN.mmdb');
@@ -89,29 +110,34 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
       if(!config.enabled){if(this.child)await this.stop();return;}
       if(!existsSync(this.binary))throw new Error('Embedded Limiter 5.1.0 binary is missing');
       if(Date.now()<this.nextStartAt)return;
-      const env=this.environment(config.env);
+      const redis=this.redisConnection();
+      const env=this.environment(config.env,redis.url);
       if(!env.TELEGRAM_BOT_TOKEN||!env.TELEGRAM_CHAT_ID||!env.TELEGRAM_ADMIN_IDS)
         throw new Error('Configure Telegram credentials in Tools > Limiter');
       const digest=createHash('sha256').update(JSON.stringify(config.env)).digest('hex');
-      if(this.child&&this.child.exitCode===null&&digest===this.fingerprint){
+      if(this.isRunning()&&digest===this.fingerprint){
         await this.limiter.heartbeat();return;
       }
-      await this.checkValkey(config.env.ACTION_MODE==='auto');
+      await this.checkValkey(config.env.ACTION_MODE==='auto',redis.options);
       mkdirSync(join(this.dir,'geoip'),{recursive:true});
       if(this.child)await this.stop();
+      if(this.closing)return;
       this.logger.log('Starting embedded upstream Limiter 5.1.0');
       const child=spawn(this.binary,[],{cwd:this.dir,env,uid:10001,gid:10001,stdio:['ignore','pipe','pipe'],windowsHide:true});
       this.child=child;this.fingerprint=digest;
       child.once('error',(error)=>{
-        if(this.child===child){this.fingerprint='';this.nextStartAt=Date.now()+30000;this.logger.error('Limiter child: '+error.message);}
+        if(this.child===child){this.child=undefined;this.fingerprint='';this.nextStartAt=Date.now()+30000;this.logger.error('Limiter child: '+error.message);}
       });
       child.once('exit',(code,signal)=>{
         if(this.child!==child||this.closing)return;
         this.logger.warn('Limiter exited: code='+code+' signal='+signal);
         this.child=undefined;this.fingerprint='';this.nextStartAt=Date.now()+30000;
+        void this.limiter.heartbeat('Limiter exited: code='+code+' signal='+signal).catch(()=>{});
       });
       child.stdout?.on('data',(chunk:Buffer)=>this.logger.debug('Limiter output received ('+chunk.length+' bytes)'));
       child.stderr?.on('data',(chunk:Buffer)=>this.logger.warn('Limiter diagnostic output received ('+chunk.length+' bytes)'));
+      await new Promise<void>((started,failed)=>{child.once('spawn',started);child.once('error',failed);});
+      if(this.closing){await this.stop();return;}
       await this.limiter.heartbeat();
     }catch(error){
       const reason=error instanceof Error?error.message:'Unknown limiter error';

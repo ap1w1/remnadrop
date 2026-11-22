@@ -6,7 +6,7 @@ import { postSignedWebhook } from '@modules/squad-quotas/quota-webhooks.service'
 
 type Zone = {id:string;name:string;status:string};
 type DnsRecord = {id:string;zone_id?:string;name:string;type:string;content:string;proxied?:boolean;ttl:number};
-type Link = {hostUuid:string;hostName:string;nodeUuid:string;nodeName:string;names:string[];recordIds:string[]};
+type Link = {hostUuid:string;hostName:string;nodeUuid:string;nodeName:string;names:string[];recordRefs:{zoneId:string;recordId:string}[]};
 type Binding = {domain:string;zone_id:string;auto_sync:boolean};
 const hex32=/^[0-9a-f]{32}$/i;
 const uuid=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -116,13 +116,13 @@ export class CloudflareDnsService {
      // Only the configured connect address (or explicit binding) is safe for DNS writes.
      // TLS SNI and Host headers can be unrelated camouflage domains; never mutate those.
      names:[...new Set(namesFor(r.address))],
-     recordIds:explicit.filter(x=>x.host_uuid===r.host_uuid).map(x=>x.record_id)
+     recordRefs:explicit.filter(x=>x.host_uuid===r.host_uuid).map(x=>({zoneId:x.zone_id,recordId:x.record_id}))
    }));
  }
  /** A host with CNAME alias is related to the terminal A/AAAA record too. */
  private aliases(records:DnsRecord[],record:DnsRecord):Set<string>{
    const names=new Set([canonical(record.name)]);
-   for(let step=0;step<6;step++){
+   for(let step=0;step<records.length;step++){
      let changed=false;
      for(const r of records){
        if(r.type==='CNAME'&&names.has(canonical(r.content))&&!names.has(canonical(r.name))){
@@ -133,27 +133,32 @@ export class CloudflareDnsService {
    }
    return names;
  }
- private connected(records:DnsRecord[],record:DnsRecord,links:Link[]):Link[]{
+ private connected(zoneId:string,records:DnsRecord[],record:DnsRecord,links:Link[]):Link[]{
    const names=this.aliases(records,record);
-   return links.filter(l=>l.recordIds.includes(record.id)||l.names.some(name=>names.has(name)));
+   return links.filter(l=>l.recordRefs.some(ref=>ref.zoneId===zoneId.toLowerCase()&&ref.recordId===record.id.toLowerCase())
+     ||l.names.some(name=>names.has(name)));
  }
  async overview(){
    const status=(await this.status()).response;
    const bindings=await this.bindings();
-   if(!status.configured)return {response:{status,zones:[],records:[],bindings}};
+   if(!status.configured)return {response:{status,zones:[],records:[],bindings,zoneErrors:[]}};
    const token=await this.token(), zones=await this.zones(token);
    const links=await this.links();
-   const displayed:Array<DnsRecord&{zoneId:string;zoneName:string;linkedHosts:Omit<Link,'names'>[]}>=[];
+   const displayed:Array<DnsRecord&{zoneId:string;zoneName:string;linkedHosts:Omit<Link,'names'|'recordRefs'>[]}>=[];
+   const zoneErrors:{zoneId:string;zoneName:string;message:string}[]=[];
    for(const zone of zones){
      try{
        const records=await this.records(token,zone.id);
        for(const rec of records.filter(r=>['A','AAAA','CNAME'].includes(r.type))){
          displayed.push({...rec,zoneId:zone.id,zoneName:zone.name,
-           linkedHosts:this.connected(records,rec,links).map(({names,...link})=>link)});
+           linkedHosts:this.connected(zone.id,records,rec,links).map(({names,recordRefs,...link})=>link)});
        }
-     }catch(error){this.logger.warn('Cloudflare DNS zone query failed for '+zone.id)}
+     }catch(error){
+       this.logger.warn('Cloudflare DNS zone query failed for '+zone.id);
+       zoneErrors.push({zoneId:zone.id,zoneName:zone.name,message:error instanceof Error?error.message:'Cloudflare DNS records could not be loaded'});
+     }
    }
-   return {response:{status,zones,records:displayed,bindings}};
+   return {response:{status,zones,records:displayed,bindings,zoneErrors}};
  }
  async bindHost(input:{zoneId:string;recordId:string;hostUuid:string}){
    if(!hex32.test(input?.zoneId)||!hex32.test(input?.recordId)||!uuid.test(input?.hostUuid))
@@ -193,8 +198,16 @@ export class CloudflareDnsService {
    if(!['A','AAAA'].includes(record.type)||record.content!==input.expectedOldIp)
      throw new ConflictException('DNS record has changed or is not A/AAAA. Refresh before retrying.');
    const all=await this.records(token,input.zoneId);
-   const matches=this.connected(all,record,await this.links()).filter(link=>link.nodeUuid===input.nodeUuid);
-   if(!matches.length)throw new ConflictException('Record is not connected to a host on the specified node');
+   const matches=this.connected(input.zoneId,all,record,await this.links());
+   if(!matches.some(link=>link.nodeUuid===input.nodeUuid.toLowerCase()))
+     throw new ConflictException('Record is not connected to a host on the specified node');
+   if(matches.some(link=>link.nodeUuid!==input.nodeUuid.toLowerCase()))
+     throw new ConflictException('DNS record is shared by multiple nodes. Use separate records and host mappings before replacing its IP.');
+   // A mapping lookup can take multiple API requests. Recheck immediately before
+   // writing, but do not claim atomic compare-and-swap against external editors.
+   const current=await this.call<DnsRecord>(token,'/zones/'+input.zoneId+'/dns_records/'+input.recordId);
+   if(current.type!==record.type||current.content!==input.expectedOldIp||canonical(current.name)!==canonical(record.name))
+     throw new ConflictException('DNS record changed while preparing the update. Refresh before retrying.');
    // Preserve type, TTL, proxy mode, comment etc: only modify the content field.
    try{
      await this.call(token,'/zones/'+input.zoneId+'/dns_records/'+input.recordId,{
@@ -222,7 +235,7 @@ export class CloudflareDnsService {
    if(!uuid.test(nodeUuid)||isIP(oldIp)!==4||isIP(newIp)!==4)throw new BadRequestException('Invalid node or rotation');
    const bindings=(await this.bindings()).filter(b=>b.auto_sync);
    if(!bindings.length)return {updated:0,failed:0,skipped:0};
-   const links=(await this.links()).filter(l=>l.nodeUuid===nodeUuid);
+   const links=(await this.links()).filter(l=>l.nodeUuid===nodeUuid.toLowerCase());
    if(!links.length)return {updated:0,failed:0,skipped:0};
    const token=await this.token();
    let updated=0,failed=0,skipped=0;
@@ -230,7 +243,7 @@ export class CloudflareDnsService {
      try{
        const records=await this.records(token,binding.zone_id);
        for(const rec of records.filter(r=>r.type==='A'&&r.content===oldIp)){
-         if(!this.connected(records,rec,links).length){skipped++;continue;}
+         if(!this.connected(binding.zone_id,records,rec,links).length){skipped++;continue;}
          try{
            await this.replaceIp({zoneId:binding.zone_id,recordId:rec.id,nodeUuid,expectedOldIp:oldIp,newIp,source:'ip_rotation'});
            updated++;

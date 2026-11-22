@@ -7,6 +7,10 @@ on:
       - 'frontend/**'
       - 'Dockerfile.dev'
       - 'integrations/**'
+      - 'tests/**'
+      - 'scripts/compose-files.py'
+      - 'migrate-2.8.1.sh'
+      - 'upgrade-fork.sh'
       - '.github/workflows/integrations-qa.yml'
   workflow_dispatch:
 
@@ -16,24 +20,44 @@ concurrency:
 
 jobs:
   build:
-    name: TypeScript + Vite + NestJS Docker build
+    name: Build, upgrade and integration checks
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     permissions:
       contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Build without touching any database
+      - name: Use Node 24 for runtime regression tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Deployment and Limiter runtime regression tests
+        run: |
+          sudo python3 -m unittest discover -s tests -v
+          node --test tests/limiter-runtime.cjs
+      - name: Build application image
         run: |
           docker build --progress=plain -f Dockerfile.dev -t remnadrop-integrations-qa .
-      - name: Check migrations packaged
+      - name: Check features packaged in the final image
         run: |
           docker run --rm --network none --entrypoint sh remnadrop-integrations-qa -ec '
             test -s /app/prisma/migrations/20261122000100_integrations_limiter_cloudflare/migration.sql
             test -f /app/frontend/index.html
             test -x /usr/local/bin/remnawave-limiter
+            test -s /etc/ssl/certs/ca-certificates.crt
+            grep -RqlF "/dashboard/tools/limiter" /app/frontend
+            grep -RqlF "/dashboard/tools/cloudflare-dns" /app/frontend
           '
+      - name: Signed webhook, bridge and DNS authorization tests
+        run: |
+          docker run --rm --network none \
+            -v "$PWD/tests/integrations:/checks:ro" \
+            --entrypoint node remnadrop-integrations-qa --test \
+            /checks/limiter-http.test.cjs /checks/cloudflare-safeguards.test.cjs
+      - name: Upgrade test database and check application API
+        run: |
+          bash tests/integrations/database-smoke.sh remnadrop-integrations-qa
       - name: Agent unit tests
         run: |
           python3 -m unittest discover -s backup-agent -p 'test*.py' -v

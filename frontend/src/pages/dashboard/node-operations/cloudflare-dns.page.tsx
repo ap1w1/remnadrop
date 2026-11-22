@@ -12,8 +12,8 @@ type Explicit={zone_id:string;record_id:string;host_uuid:string}
 type HostOption={uuid:string;remark:string;address:string}
 type History={id:string;record_name:string;old_ip:string|null;new_ip:string|null;source:string;status:string;message:string;created_at:string}
 type Status={configured:boolean;source:string;updatedAt:string|null}
-type Data={zones:Zone[];records:RecordItem[];bindings:Binding[];status:Status}
-const empty:Data={zones:[],records:[],bindings:[],status:{configured:false,source:'none',updatedAt:null}}
+type Data={zones:Zone[];records:RecordItem[];bindings:Binding[];status:Status;zoneErrors:{zoneId:string;zoneName:string;message:string}[]}
+const empty:Data={zones:[],records:[],bindings:[],zoneErrors:[],status:{configured:false,source:'none',updatedAt:null}}
 const api='/api/cloudflare-dns'
 const msg=(e:unknown)=>{const a=e as {response?:{data?:{message?:string|string[]}}};return String(a.response?.data?.message??(e instanceof Error?e.message:'Ошибка Cloudflare DNS'))}
 export function CloudflareDnsPage(){
@@ -79,6 +79,10 @@ export function CloudflareDnsPage(){
       <Button variant="light" leftSection={<TbRefresh size={17}/>} loading={busy||loading} onClick={()=>void refresh().catch(e=>setError(msg(e)))}>Обновить</Button>
     </Group>
     {error&&<Alert color="red" withCloseButton onClose={()=>setError('')}>{error}</Alert>}
+    {!!data.zoneErrors?.length&&<Alert color="yellow" title="Не все DNS-записи загружены"><Stack gap={4}>
+      {data.zoneErrors.map(item=><Text size="sm" key={item.zoneId}>{item.zoneName}: {item.message}</Text>)}
+      <Text size="xs">Проверьте доступ токена к этим зонам и повторите обновление.</Text>
+    </Stack></Alert>}
     {notice&&<Alert color="teal" withCloseButton onClose={()=>setNotice('')}>{notice}</Alert>}
     <SimpleGrid cols={{base:1,md:2}} spacing="sm">
       <Card withBorder radius="md" p="md"><Stack gap="xs">
@@ -120,10 +124,10 @@ export function CloudflareDnsPage(){
           <Table.Td><Group gap={4} wrap="nowrap">
             <Tooltip label="Привязать DNS-запись к хосту вручную"><Button variant="subtle" size="compact-xs" onClick={()=>{setLinkRecord(r);setNewHost(null)}}><TbLink size={15}/></Button></Tooltip>
             {['A','AAAA'].includes(r.type)&&r.linkedHosts.length>0&&
-            <Tooltip label="Изменить только текущий IP этой DNS-записи">
-              <Button variant="subtle" size="compact-xs" leftSection={<TbEdit size={14}/>} onClick={()=>{
+            <Tooltip label={new Set(r.linkedHosts.map(h=>h.nodeUuid)).size>1?'Запись используется несколькими нодами. Создайте отдельные DNS-записи.':'Изменить только текущий IP этой DNS-записи'}>
+              <span><Button variant="subtle" size="compact-xs" disabled={new Set(r.linkedHosts.map(h=>h.nodeUuid)).size>1} leftSection={<TbEdit size={14}/>} onClick={()=>{
                 setEdit(r);setNodeUuid(r.linkedHosts[0]?.nodeUuid??null);setIp('')
-              }}>IP</Button></Tooltip>}
+              }}>IP</Button></span></Tooltip>}
             </Group></Table.Td>
         </Table.Tr>)}
           {!rows.length&&<Table.Tr><Table.Td colSpan={6}><Text ta="center" c="dimmed" py="md">{loading?'Загрузка DNS…':'Записей нет или токен не подключён'}</Text></Table.Td></Table.Tr>}
@@ -144,7 +148,7 @@ export function CloudflareDnsPage(){
       {!history.length&&<Table.Tr><Table.Td colSpan={5}><Text size="sm" c="dimmed" ta="center" py="md">Операций пока не было</Text></Table.Td></Table.Tr>}
       </Table.Tbody></Table></Table.ScrollContainer>
     </Stack></Card>
-    <Text size="xs" c="dimmed">Автозамена работает только для A-записей, чей старый IP совпадает с текущим значением Cloudflare, а имя домена связано с хостом указанной ноды. Поддерживаются цепочки CNAME. Вебхуки и API настраиваются отдельно.</Text>
+    <Text size="xs" c="dimmed">Автозамена работает только для A-записей с ожидаемым старым IP и привязкой к хостам одной ноды. Общие записи нескольких нод не изменяются. Поддерживаются цепочки CNAME. Вебхуки и API настраиваются отдельно.</Text>
     <Modal opened={!!linkRecord} onClose={()=>setLinkRecord(null)} title="Привязки DNS-записи к хостам" centered>
       {linkRecord&&<Stack gap="sm">
         <Text size="sm" fw={600}>{linkRecord.name}</Text>
@@ -165,7 +169,7 @@ export function CloudflareDnsPage(){
     </Modal>
     <Modal opened={!!edit} onClose={()=>setEdit(null)} title="Замена IP в Cloudflare DNS" centered>
       <Stack gap="md">{edit&&<>
-        <Alert color="yellow" title="Проверьте изменение">Управляющий запрос заменит только поле content одной записи. Если старый IP в Cloudflare уже изменился, операция не выполнится.</Alert>
+        <Alert color="yellow" title="Проверьте изменение">Меняется только IP этой записи. Перед записью сервер повторно проверит старый IP. Не редактируйте её одновременно через Cloudflare или другие системы.</Alert>
         <Text size="sm">Домен: <b>{edit.name}</b> · {edit.type}</Text>
         <TextInput label="Текущий IP (ожидаемый)" readOnly value={edit.content}/>
         <Select searchable label="Нода" data={[...new Map(edit.linkedHosts.map(h=>([h.nodeUuid,{value:h.nodeUuid,label:h.nodeName}] as const))).values()]}

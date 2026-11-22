@@ -1,10 +1,10 @@
 import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Roles } from '@common/decorators/roles/roles';
-import { ApiScopeResource } from '@common/decorators/scopes';
+import { ApiScopeEndpoint, ApiScopeResource } from '@common/decorators/scopes';
 import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
 import { RolesGuard } from '@common/guards/roles';
 import { ScopesGuard } from '@common/guards/scopes';
-import { ROLE } from '@libs/contracts/constants';
+import { getEndpointDetails, ROLE } from '@libs/contracts/constants';
 import { PrismaService } from '@common/database/prisma.service';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Request } from 'express';
@@ -29,7 +29,12 @@ export class CloudflareDnsController {
  @Put('zones') bind(@Body() input:{domain:string;zoneId:string;autoSync:boolean}){
    return this.cf.upsertBinding(input.domain,input.zoneId,input.autoSync);
  }
- @Post('replace-ip') replace(@Body() input:{zoneId:string;recordId:string;nodeUuid:string;expectedOldIp:string;newIp:string}){
+ @Post('replace-ip')
+ @Roles(ROLE.ADMIN,ROLE.API)
+ @ApiScopeEndpoint(getEndpointDetails('/replace-ip','post','Replace a linked Cloudflare DNS record IP',{
+   scope:'cloudflare-replace-ip',kind:'write'
+ }))
+ replace(@Body() input:{zoneId:string;recordId:string;nodeUuid:string;expectedOldIp:string;newIp:string}){
    return this.cf.replaceIp(input);
  }
 }
@@ -49,7 +54,7 @@ export class CloudflareDnsWebhookController {
  ){
    const secret=process.env.CLOUDFLARE_DNS_INCOMING_SECRET;
    if(!secret||secret.length<32)throw new UnauthorizedException('Incoming Cloudflare DNS webhook disabled');
-   if(!id||!timestamp||!signature||!request.rawBody||request.rawBody.length>65536||body?.eventId!==id||!/^[\da-f-]{36}$/i.test(id))
+   if(!id||!timestamp||!signature||!request.rawBody||request.rawBody.length>65536||body?.eventId!==id||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id))
      throw new UnauthorizedException('Invalid webhook headers');
    const epoch=Number(timestamp);
    if(!Number.isSafeInteger(epoch)||Math.abs(Date.now()-epoch*1000)>300000)
