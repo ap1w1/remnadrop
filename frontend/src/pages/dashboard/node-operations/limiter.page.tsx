@@ -7,15 +7,21 @@ import { nodeOptionLabel, type NodeOptionData } from '@shared/utils/misc/node-op
 
 type Mode='manual'|'auto'
 type Settings={enabled:boolean;mode:Mode;checkIntervalSeconds:number;activeWindowSeconds:number;tolerance:number;
- defaultDeviceLimit:number;violationThreshold:number;thresholdWindowSeconds:number;cooldownSeconds:number;
- autoRestoreMinutes:number;subnetGrouping:boolean;ignoredNodes:string[];ignoredUsers:string[];ignoredIps:string[];
- lastScanAt:string|null;lastError:string|null}
+ toleranceMultiplier:number;defaultDeviceLimit:number;violationThreshold:number;thresholdWindowSeconds:number;cooldownSeconds:number;
+ autoRestoreMinutes:number;softWarnings:boolean;subnetGrouping:boolean;subnetPrefixV4:number;asnGrouping:boolean;
+ trafficMonitor:boolean;trafficSpikeFactor:number;trafficSpikeMinGb:number;trafficHeavyGb:number;trafficHeavyDays:number;
+ sharedHwidMonitor:boolean;sharedHwidHistoryDays:number;dailyReport:boolean;updateCheck:boolean;
+ ignoredNodes:string[];trafficIgnoredNodes:string[];ignoredUsers:string[];ignoredIps:string[];
+ lastScanAt:string|null;lastError:string|null;engineVersion:string}
 type Event={id:string;user_uuid:string|null;username:string;event_type:string;mode:Mode;device_limit:number;observed_count:number;
- ips:Array<{ip:string;nodeUuid:string}>;details:string|null;created_at:string}
+ ips:Array<{ip:string;nodeUuid?:string;node_uuid?:string}>;details:string|null;created_at:string}
 const api='/api/limiter'
-const defaultConfig:Settings={enabled:false,mode:'manual',checkIntervalSeconds:60,activeWindowSeconds:180,tolerance:1,
- defaultDeviceLimit:0,violationThreshold:3,thresholdWindowSeconds:3600,cooldownSeconds:900,autoRestoreMinutes:15,
- subnetGrouping:false,ignoredNodes:[],ignoredUsers:[],ignoredIps:[],lastScanAt:null,lastError:null}
+const defaultConfig:Settings={enabled:false,mode:'manual',checkIntervalSeconds:60,activeWindowSeconds:120,tolerance:1,
+ toleranceMultiplier:0,defaultDeviceLimit:0,violationThreshold:3,thresholdWindowSeconds:3600,cooldownSeconds:300,autoRestoreMinutes:15,
+ softWarnings:false,subnetGrouping:false,subnetPrefixV4:24,asnGrouping:false,
+ trafficMonitor:false,trafficSpikeFactor:10,trafficSpikeMinGb:150,trafficHeavyGb:200,trafficHeavyDays:5,
+ sharedHwidMonitor:false,sharedHwidHistoryDays:30,dailyReport:false,updateCheck:false,
+ ignoredNodes:[],trafficIgnoredNodes:[],ignoredUsers:[],ignoredIps:[],lastScanAt:null,lastError:null,engineVersion:'5.1.0'}
 function errMessage(e:unknown){const a=e as {response?:{data?:{message?:string|string[]}}};return String(a.response?.data?.message??'Не удалось выполнить запрос')}
 export function LimiterPage(){
  const [settings,setSettings]=useState<Settings>(defaultConfig),[events,setEvents]=useState<Event[]>([]),[nodes,setNodes]=useState<NodeOptionData[]>([])
@@ -33,9 +39,9 @@ export function LimiterPage(){
    if(settings.enabled&&settings.mode==='auto'&&!window.confirm('Автоматический режим будет отключать реальные подписки пользователей. Включить автоблокировку?'))return
    setBusy(true);setError('')
    try{
-     const {lastScanAt,lastError,...config}=settings
+     const {lastScanAt,lastError,engineVersion,...config}=settings
      await instance.put(api+'/settings',{...config,ignoredIps:ignoredIpsText.split(/[,\s]+/).filter(Boolean)})
-     await refresh();setNotice('Настройки Limiter применены без перезапуска панели.')
+     await refresh();setNotice('Настройки сохранены. Сервис Limiter 5.1.0 применит их при следующей синхронизации.')
    }catch(e){setError(errMessage(e))}finally{setBusy(false)}
  }
  const ignored=async(uuid:string)=>{
@@ -46,43 +52,51 @@ export function LimiterPage(){
    try{await instance.post(api+'/unignore/'+uuid);await refresh();setNotice('Пользователь удалён из исключений.')}
    catch(e){setError(errMessage(e))}
  }
- const num=(key:keyof Settings,label:string,min:number,max:number,description?:string)=>
-   <NumberInput size="sm" label={label} min={min} max={max} allowDecimal={false}
+ const num=(key:keyof Settings,label:string,min:number,max:number,description?:string,allowDecimal=false)=>
+   <NumberInput size="sm" label={label} min={min} max={max} allowDecimal={allowDecimal}
      description={description} value={settings[key] as number} onChange={v=>change(key,Number(v) as never)}/>
  return <Page title="Limiter"><Stack gap="md">
    <Group justify="space-between" wrap="wrap" align="center"><Group gap="sm"><TbShieldCheck size={30}/>
-     <div><Title order={2}>Limiter</Title><Text c="dimmed" size="sm">Контроль одновременных IP на всех нодах Remnawave 2.8.1</Text></div></Group>
+     <div><Title order={2}>Limiter</Title><Text c="dimmed" size="sm">Оригинальный Remnawave Limiter 5.1.0 через API-адаптер RemnaDrop 2.8.1</Text></div></Group>
      <Button variant="light" leftSection={<TbRefresh size={16}/>} loading={loading} onClick={()=>void refresh().catch(e=>setError(errMessage(e)))}>Обновить</Button></Group>
    {error&&<Alert color="red" withCloseButton onClose={()=>setError('')}>{error}</Alert>}
    {notice&&<Alert color="teal" withCloseButton onClose={()=>setNotice('')}>{notice}</Alert>}
-   {settings.lastError&&<Alert color="yellow" title="Последний цикл Limiter">{settings.lastError}</Alert>}
+   {settings.lastError&&<Alert color="yellow" title="Состояние подключения Limiter">{settings.lastError}</Alert>}
+   {settings.enabled&&(!settings.lastScanAt||Date.now()-new Date(settings.lastScanAt).getTime()>120000)&&
+     <Alert color="orange" title="Сервис не подтверждён">Limiter включён в настройках, но служба не присылает heartbeat. Убедитесь, что дополнительный контейнер Limiter 5.1.0 установлен и подключён.</Alert>}
    <SimpleGrid cols={{base:1,sm:3}} spacing="xs">
-     <Card withBorder p="sm"><Text c="dimmed" size="xs">Состояние</Text><Badge mt={6} color={settings.enabled?'teal':'gray'}>{settings.enabled?'Включён':'Выключен'}</Badge></Card>
+     <Card withBorder p="sm"><Text c="dimmed" size="xs">Состояние</Text><Badge mt={6} color={settings.enabled?'teal':'gray'}>{settings.enabled?'Разрешён':'Выключен'}</Badge></Card>
      <Card withBorder p="sm"><Text c="dimmed" size="xs">Режим</Text><Title order={4}>{settings.mode==='auto'?'Автоматический':'Ручной'}</Title></Card>
-     <Card withBorder p="sm"><Text c="dimmed" size="xs">Последняя проверка</Text><Text size="sm" mt={5}>{settings.lastScanAt?new Date(settings.lastScanAt).toLocaleString('ru-RU'):'Не запускался'}</Text></Card>
+     <Card withBorder p="sm"><Text c="dimmed" size="xs">Последняя связь с сервисом</Text><Text size="sm" mt={5}>{settings.lastScanAt?new Date(settings.lastScanAt).toLocaleString('ru-RU'):'Не запускался'}</Text></Card>
    </SimpleGrid>
    <Card withBorder radius="md" padding="md"><Stack gap="md">
      <Group justify="space-between"><Group gap="xs"><TbAdjustments size={21}/><Title order={4}>Настройки проверки</Title></Group>
-       <Switch label={settings.enabled?'Limiter работает':'Limiter выключен'} checked={settings.enabled} onChange={e=>change('enabled',e.currentTarget.checked)}/></Group>
-     <Alert color="blue" title="Совместимость Remnawave 2.8.1">Используется штатная очередь fetch-users-ips для нод, а не API connections версии 3.x. При недоступности хотя бы одной выбранной ноды автоблокировка не выполняется.</Alert>
+       <Switch label={settings.enabled?'Включить Limiter 5.1.0':'Limiter выключен'} checked={settings.enabled} onChange={e=>change('enabled',e.currentTarget.checked)}/></Group>
+     <Alert color="blue" title="Limiter 5.1.0 + Remnawave 2.8.1">Работает исходный Go Limiter 5.1.0. Адаптер переводит запросы API 3.x в штатные интерфейсы RemnaDrop 2.8.1. Для запуска необходим отдельный контейнер с настроенным Telegram-ботом и секретами.</Alert>
      <SimpleGrid cols={{base:1,sm:2,lg:4}} spacing="sm">
        <Select label="Режим реагирования" allowDeselect={false} value={settings.mode} onChange={v=>change('mode',(v??'manual') as Mode)}
-         data={[{value:'manual',label:'Ручной — только события'},{value:'auto',label:'Авто — отключать подписки'}]}/>
+         data={[{value:'manual',label:'Ручной — Telegram-алерты и кнопки'},{value:'auto',label:'Авто — отключать подписки'}]}/>
        {num('checkIntervalSeconds','Проверка каждые, сек',30,3600)}
        {num('activeWindowSeconds','Активный IP, сек',60,3600)}
        {num('tolerance','Допустимое превышение, IP',0,20)}
+       {num('toleranceMultiplier','Допуск, множитель',0,100,undefined,true)}
        {num('defaultDeviceLimit','Лимит по умолчанию',0,100,'0 — без ограничений, если у пользователя не задан HWID')}
        {num('violationThreshold','Повторений до действия',1,30)}
        {num('thresholdWindowSeconds','Окно нарушений, сек',60,86400)}
        {num('cooldownSeconds','Кулдаун, сек',30,86400)}
        {num('autoRestoreMinutes','Автовключение, мин',0,10080,'0 — не включать автоматически')}
      </SimpleGrid>
-     <Switch label="Группировать IPv4 по /24" description="Снижает количество ложных превышений при смене IP внутри одной подсети. IPv6 учитываются отдельно."
-       checked={settings.subnetGrouping} onChange={e=>change('subnetGrouping',e.currentTarget.checked)}/>
+     <SimpleGrid cols={{base:1,sm:2,lg:3}}>
+       <Switch label="Группировать IP по подсетям" checked={settings.subnetGrouping} onChange={e=>change('subnetGrouping',e.currentTarget.checked)}/>
+       <Switch label="Группировка по ASN" description="Требует базу MaxMind ASN" checked={settings.asnGrouping} onChange={e=>change('asnGrouping',e.currentTarget.checked)}/>
+       <Switch label="Мягкие предупреждения" description="В пределах допуска без блокировки" checked={settings.softWarnings} onChange={e=>change('softWarnings',e.currentTarget.checked)}/>
+     </SimpleGrid>
+     {settings.subnetGrouping&&num('subnetPrefixV4','Префикс IPv4',8,32)}
      <MultiSelect searchable label="Исключённые ноды" value={settings.ignoredNodes} onChange={v=>change('ignoredNodes',v)}
        data={nodes.map(n=>({value:n.uuid,label:nodeOptionLabel(n)}))}/>
      <TextInput label="Исключённые IP (через запятую)" description="Указывайте отдельные адреса IPv4/IPv6."
        value={ignoredIpsText} onChange={e=>setIgnoredIpsText(e.currentTarget.value)}/>
+     <Text size="xs" c="dimmed">IP и подсети CIDR допускаются. Пример: 192.0.2.10, 2001:db8::/32</Text>
      {settings.ignoredUsers.length>0&&<Stack gap={4}>
        <Text size="sm" fw={600}>Пользователи в исключениях</Text>
        <Group gap="xs" wrap="wrap">
@@ -92,7 +106,30 @@ export function LimiterPage(){
          </Button>)}
        </Group>
      </Stack>
-     {settings.mode==='auto'&&<Alert color="orange" title="Автоблокировка">При подтверждённом превышении Limiter отключит подписку через UsersService. Временная блокировка завершается автоматически, если установлен срок восстановления.</Alert>}
+     <Card withBorder p="sm" radius="md"><Stack gap="sm">
+       <Title order={5}>Мониторинг аномального трафика (5.1.0)</Title>
+       <Switch label="Включить обнаружение всплесков и высокого трафика" checked={settings.trafficMonitor}
+         onChange={e=>change('trafficMonitor',e.currentTarget.checked)}/>
+       <SimpleGrid cols={{base:1,sm:2,lg:4}}>
+         {num('trafficSpikeFactor','Кратность всплеска',1.5,100,undefined,true)}
+         {num('trafficSpikeMinGb','Минимальный всплеск, ГБ',1,1000000)}
+         {num('trafficHeavyGb','Высокий трафик в сутки, ГБ',0,1000000)}
+         {num('trafficHeavyDays','Суток с высоким трафиком (из 7)',1,7)}
+       </SimpleGrid>
+       <MultiSelect label="Исключить ноды из мониторинга трафика" searchable value={settings.trafficIgnoredNodes}
+         onChange={v=>change('trafficIgnoredNodes',v)}
+         data={nodes.map(n=>({value:n.uuid,label:nodeOptionLabel(n)}))}/>
+     </Stack></Card>
+     <Card withBorder p="sm" radius="md"><Stack gap="sm">
+       <Title order={5}>Общий HWID / повторные пробные периоды (5.1.0)</Title>
+       <Switch label="Отслеживать один HWID у разных аккаунтов" checked={settings.sharedHwidMonitor}
+         onChange={e=>change('sharedHwidMonitor',e.currentTarget.checked)}/>
+       {num('sharedHwidHistoryDays','Хранить историю устройств, дней',0,365,'0 — без исторических совпадений')}
+       <Text size="xs" c="dimmed">Ограничение мониторинга отдельными внутренними сквадами задаётся переменной SHARED_HWID_SQUAD_UUIDS на сервере.</Text>
+     </Stack></Card>
+     <Group gap="lg"><Switch label="Ежедневный отчёт" checked={settings.dailyReport} onChange={e=>change('dailyReport',e.currentTarget.checked)}/>
+       <Switch label="Проверять обновления Limiter" checked={settings.updateCheck} onChange={e=>change('updateCheck',e.currentTarget.checked)}/></Group>
+     {settings.mode==='auto'&&<Alert color="orange" title="Автоблокировка">Исходный Limiter 5.1.0 отключает подписки по превышению лимита. Временные блокировки и их восстановление управляются самим сервисом.</Alert>}
      <Group justify="end"><Button disabled={busy} variant="default" onClick={()=>void refresh()}>Отменить изменения</Button>
        <Button loading={busy} onClick={()=>void save()}>Сохранить настройки</Button></Group>
    </Stack></Card>
@@ -103,9 +140,9 @@ export function LimiterPage(){
        <Table.Tbody>{events.map(e=><Table.Tr key={e.id}>
          <Table.Td><Text size="xs">{new Date(e.created_at).toLocaleString('ru-RU')}</Text></Table.Td>
          <Table.Td><Text fw={600} size="sm">{e.username}</Text></Table.Td>
-         <Table.Td><Badge color={e.event_type==='disabled'?'red':e.event_type==='restored'?'teal':'yellow'}>{e.event_type==='disabled'?'Блокировка':e.event_type==='restored'?'Восстановление':'Превышение'}</Badge></Table.Td>
+         <Table.Td><Badge color={e.event_type==='soft_violation_detected'?'blue':'yellow'}>{e.event_type==='soft_violation_detected'?'Предупреждение':'Превышение'}</Badge></Table.Td>
          <Table.Td>{e.device_limit}</Table.Td><Table.Td>{e.observed_count}</Table.Td>
-         <Table.Td><Tooltip multiline label={(e.ips??[]).map(x=>x.ip+' · '+(nodes.find(n=>n.uuid===x.nodeUuid)?.name??x.nodeUuid)).join('\n')||'Нет IP'}>
+         <Table.Td><Tooltip multiline label={(e.ips??[]).map(x=>x.ip+' · '+(nodes.find(n=>n.uuid===(x.nodeUuid??x.node_uuid))?.name??x.nodeUuid??x.node_uuid)).join('\n')||'Нет IP'}>
            <Text size="xs" c="dimmed">{e.ips?.length??0} IP · подробнее при наведении</Text></Tooltip></Table.Td>
          <Table.Td>{e.user_uuid&&!settings.ignoredUsers.includes(e.user_uuid)&&<Button variant="subtle" size="compact-xs" onClick={()=>void ignored(e.user_uuid!)}>Игнорировать</Button>}</Table.Td>
        </Table.Tr>)}
@@ -113,6 +150,6 @@ export function LimiterPage(){
        </Table.Tbody>
      </Table></Table.ScrollContainer>
    </Stack></Card>
-   <Text size="xs" c="dimmed">На сервере можно настроить Telegram-уведомления через LIMITER_TELEGRAM_BOT_TOKEN и LIMITER_TELEGRAM_CHAT_ID. Настройки хранятся в PostgreSQL, а события доступны через /api/limiter/events.</Text>
+   <Text size="xs" c="dimmed">Исходный Go-сервис требует TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID и TELEGRAM_ADMIN_IDS. Настройки задаются в панели, применяются через адаптер и supervisor; события подтверждённых нарушений поступают по HMAC-вебхуку в PostgreSQL. Мониторинг трафика и общий HWID отправляют собственные Telegram-алерты.</Text>
  </Stack></Page>
 }
