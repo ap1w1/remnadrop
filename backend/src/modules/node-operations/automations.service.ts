@@ -23,7 +23,8 @@ export type AutomationInput = {
     node_uuid: string | null;
     name: string;
     enabled: boolean;
-    trigger_type: 'online_drop' | 'node_offline' | 'interval' | 'manual';
+    trigger_type: 'online_drop' | 'online_value' | 'node_offline' | 'interval' | 'manual';
+    online_operator: 'gt' | 'lt' | 'eq'; online_value: number;
     drop_percent: number;
     min_online: number;
     duration_minutes: number;
@@ -67,6 +68,7 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
     const rule: AutomationInput = {
         node_uuid: input.node_uuid || null, name: typeof input.name === 'string' ? input.name.trim() : '',
         enabled: input.enabled ?? false, trigger_type: input.trigger_type ?? 'online_drop',
+        online_operator: input.online_operator ?? 'lt', online_value: input.online_value ?? 10,
         drop_percent: input.drop_percent ?? 50, min_online: input.min_online ?? 5,
         duration_minutes: input.duration_minutes ?? 5, cooldown_minutes: input.cooldown_minutes ?? 60,
         interval_minutes: input.interval_minutes ?? 60, failure_policy: input.failure_policy ?? 'continue',
@@ -74,10 +76,12 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
     };
     if (rule.name.length < 2 || rule.name.length > 80) throw new BadRequestException('Название должно содержать 2–80 символов');
     if (typeof rule.enabled !== 'boolean') throw new BadRequestException('Некорректное состояние правила');
-    if (!['online_drop','node_offline','interval','manual'].includes(rule.trigger_type)) throw new BadRequestException('Неизвестное условие запуска');
+    if (!['online_drop','online_value','node_offline','interval','manual'].includes(rule.trigger_type)) throw new BadRequestException('Неизвестное условие запуска');
     if (!['stop','continue'].includes(rule.failure_policy)) throw new BadRequestException('Выберите поведение при ошибке');
     if (rule.node_uuid !== null) assertId(rule.node_uuid, 'ноды');
-    if (['online_drop','node_offline'].includes(rule.trigger_type) && !rule.node_uuid) throw new BadRequestException('Для этого условия выберите ноду');
+    if (!['gt','lt','eq'].includes(rule.online_operator) || !Number.isInteger(rule.online_value) || rule.online_value < 0 || rule.online_value > 1000000)
+        throw new BadRequestException('Укажите оператор и целое значение онлайна от 0 до 1000000');
+    if (['online_drop','online_value','node_offline'].includes(rule.trigger_type) && !rule.node_uuid) throw new BadRequestException('Для этого условия выберите ноду');
     for (const [key,min,max] of [
         ['drop_percent',1,100], ['min_online',0,1000000], ['duration_minutes',1,1440],
         ['cooldown_minutes',1,10080], ['interval_minutes',5,525600],
@@ -201,8 +205,8 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
         await this.validateResources(rule);
         await this.checkDnsActions(rule);
         await this.db.$executeRaw`INSERT INTO node_automation_rules
-            (node_uuid,name,enabled,trigger_type,drop_percent,min_online,duration_minutes,cooldown_minutes,interval_minutes,failure_policy,actions)
-            VALUES(${rule.node_uuid}::uuid,${rule.name},${rule.enabled},${rule.trigger_type},${rule.drop_percent},${rule.min_online},
+            (node_uuid,name,enabled,trigger_type,online_operator,online_value,drop_percent,min_online,duration_minutes,cooldown_minutes,interval_minutes,failure_policy,actions)
+            VALUES(${rule.node_uuid}::uuid,${rule.name},${rule.enabled},${rule.trigger_type},${rule.online_operator},${rule.online_value},${rule.drop_percent},${rule.min_online},
                 ${rule.duration_minutes},${rule.cooldown_minutes},${rule.interval_minutes},${rule.failure_policy},${JSON.stringify(rule.actions)}::jsonb)`;
         return this.list();
     }
@@ -213,6 +217,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
         await this.checkDnsActions(rule);
         const changed = await this.db.$executeRaw`UPDATE node_automation_rules
             SET node_uuid=${rule.node_uuid}::uuid,name=${rule.name},enabled=${rule.enabled},trigger_type=${rule.trigger_type},
+                online_operator=${rule.online_operator},online_value=${rule.online_value},
                 drop_percent=${rule.drop_percent},min_online=${rule.min_online},duration_minutes=${rule.duration_minutes},
                 cooldown_minutes=${rule.cooldown_minutes},interval_minutes=${rule.interval_minutes},failure_policy=${rule.failure_policy},
                 actions=${JSON.stringify(rule.actions)}::jsonb,updated_at=now(),revision=revision+1,pending_since=NULL
@@ -276,6 +281,12 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
             // Preserve the existing online_drop behavior for confirmed disconnected nodes.
             state.matched = true; state.reason = 'Нода недоступна по последнему замеру';
         } else if (rule.trigger_type === 'node_offline') state.reason = 'Нода доступна';
+        else if (rule.trigger_type === 'online_value') {
+            if (row.online === null || !Number.isFinite(row.online)) { state.reason = 'Нет достоверного значения онлайна'; return state; }
+            const operator = rule.online_operator ?? 'lt'; const limit = rule.online_value ?? 10;
+            state.matched = operator === 'gt' ? row.online > limit : operator === 'eq' ? row.online === limit : row.online < limit;
+            state.reason = `Онлайн ${row.online}, условие ${operator === 'gt' ? '>' : operator === 'eq' ? '=' : '<'} ${limit}${state.matched ? ' выполнено' : ' не выполнено'}`;
+        }
         else if (row.online === null || row.baseline === null || row.sample_count < 3 || row.baseline < rule.min_online || row.baseline <= 0) state.reason = 'Недостаточно исходного онлайна или замеров для сравнения';
         else {
             state.dropPercent = Math.max(0,100*(1-row.online/row.baseline));
@@ -348,7 +359,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
                     AND (${source}='manual' OR (enabled AND
                         (last_run_at IS NULL OR last_run_at<now()-${rule.cooldown_minutes}::int*interval '1 minute')
                         AND ((trigger_type='interval' AND COALESCE(last_run_at,created_at)<=now()-interval_minutes*interval '1 minute')
-                            OR (trigger_type IN ('online_drop','node_offline') AND pending_since IS NOT NULL
+                            OR (trigger_type IN ('online_drop','online_value','node_offline') AND pending_since IS NOT NULL
                                 AND pending_since<=now()-duration_minutes*interval '1 minute'))))
                 RETURNING id)
             INSERT INTO node_automation_executions(id,rule_id,source,rule_name,node_uuid,trigger_snapshot,rule_snapshot)
