@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM ghcr.io/syvlech/remnawave-limiter:c5ce367 AS limiter-upstream
 
 FROM golang:1.27-alpine AS limiter-build
@@ -10,7 +11,9 @@ RUN git init . \
     && test "$(git rev-parse HEAD)" = c5ce367c5f38a345fad59bb813fd9fd67c80a329
 COPY integrations/limiter-runtime /remnadrop/integrations/limiter-runtime
 COPY scripts/patch-limiter.py /remnadrop/scripts/patch-limiter.py
-RUN python3 /remnadrop/scripts/patch-limiter.py /limiter \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    python3 /remnadrop/scripts/patch-limiter.py /limiter \
     && go test ./... \
     && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/remnawave-limiter ./cmd/limiter
 
@@ -18,7 +21,7 @@ FROM node:24.22.3-trixie-slim AS frontend-build
 WORKDIR /build
 COPY frontend/package*.json ./
 COPY frontend/.npmrc ./
-RUN npm ci --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 # Use the local fork contracts and Subpage types (not the published 2.8.x npm versions).
 # Otherwise new node fields are stripped by old Zod schemas on the frontend.
 COPY backend/libs/contract /fork-libs/contract
@@ -42,10 +45,10 @@ WORKDIR /app
 ENV HUSKY=0
 COPY backend/package*.json ./
 COPY backend/.npmrc ./
+COPY backend/patches ./patches
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY backend/prisma ./prisma
 COPY backend/prisma.config.ts ./
-COPY backend/patches ./patches
-RUN npm ci --no-audit --no-fund
 COPY backend/ ./
 RUN DATABASE_URL=postgresql://postgres:postgres@localhost:5432/build npm run migrate:generate
 COPY --from=frontend-build /build/dist ./frontend
