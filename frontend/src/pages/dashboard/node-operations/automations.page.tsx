@@ -237,6 +237,11 @@ export function AutomationsPage() {
                             {execution.trigger_snapshot?.reason && <Text size="sm" c="dimmed">Условие: {execution.trigger_snapshot.reason}</Text>}
                             {(Array.isArray(execution.details) ? execution.details : []).map((detail, index) => <Card key={index} withBorder radius="md" p="sm"><Group wrap="nowrap" align="flex-start" gap="sm"><span className={classes.stepIndex}>{index + 1}</span><div style={{ minWidth: 0 }}>
                                 <Group gap="sm"><Text size="sm" fw={600}>{detail.title || actionLabels[detail.type as keyof typeof actionLabels] || 'Действие'}</Text><Badge size="xs" color={detail.status === 'pending' ? 'violet' : detail.status === 'skipped' ? 'gray' : detail.success ? 'teal' : 'red'}>{detail.status === 'pending' ? 'Ожидание DPI' : detail.status === 'skipped' ? 'Пропущено' : detail.success ? 'Выполнено' : 'Ошибка'}</Badge></Group>
+                                {detail.type==='dpi_check'&&<Group gap="xs" mt={5}>
+                                    <Badge size="sm" variant="light" color={detail.outcome==='unavailable'?'red':detail.outcome==='available'?'teal':'orange'}>
+                                        {detail.outcome==='unavailable'?'Недоступно — аварийная ветка':detail.outcome==='available'?'Доступно — переключение не требуется':detail.outcome==='unknown'?'Неопределённо — переключение запрещено':detail.status==='pending'?'Идёт проверка…':'Нет подтверждённого результата'}
+                                    </Badge>
+                                </Group>}
                                 <Text size="sm" mt={4} className={classes.detailMessage}>{detail.message}</Text>
                             </div></Group></Card>)}
                             {!execution.details?.length && <Text size="sm" c="dimmed">Первое действие ещё выполняется</Text>}
