@@ -2,7 +2,7 @@ import { DeleteNodeFeature } from '@features/ui/dashboard/nodes/delete-node'
 import { ResetNodeTrafficFeature } from '@features/ui/dashboard/nodes/reset-node-traffic'
 import { RestartNodeButtonFeature } from '@features/ui/dashboard/nodes/restart-node-button'
 import { ToggleNodeStatusButtonFeature } from '@features/ui/dashboard/nodes/toggle-node-status-button'
-import { Button, CopyButton, Group, Menu, px, Stack, Tabs } from '@mantine/core'
+import { Button, CopyButton, Menu, px, SimpleGrid, Stack, Tabs } from '@mantine/core'
 import { UseFormReturnType } from '@mantine/form'
 import {
     GetNodePluginsCommand,
@@ -127,13 +127,13 @@ export const BaseNodeForm = <T extends UpdateNodeCommand.Request>(props: IProps<
                     />
                 </MotionStack>
             ) : (
-                <Group align="flex-start" gap="md" grow={false} wrap="wrap">
+                <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md" verticalSpacing="md" style={{ width: "100%", alignItems: "start" }}>
                     {/* Left Side */}
                     <MotionStack
                         animate="visible"
                         gap="md"
                         initial="hidden"
-                        style={{ flex: '1 1 400px' }}
+                        style={{ width: '100%', minWidth: 0 }}
                         variants={containerVariants}
                     >
                         <ModalAccordionWidget node={node} />
@@ -163,7 +163,7 @@ export const BaseNodeForm = <T extends UpdateNodeCommand.Request>(props: IProps<
                         animate="visible"
                         gap="md"
                         initial="hidden"
-                        style={{ flex: '1 1 400px' }}
+                        style={{ width: '100%', minWidth: 0 }}
                         variants={containerVariants}
                     >
                         {nodeSystemCard && node.system && (
@@ -182,7 +182,7 @@ export const BaseNodeForm = <T extends UpdateNodeCommand.Request>(props: IProps<
                             motionWrapper={MotionWrapper}
                         />
                         </MotionStack>
-                </Group>
+                </SimpleGrid>
             )}
                 </Tabs.Panel>
                 <Tabs.Panel value="ip">
