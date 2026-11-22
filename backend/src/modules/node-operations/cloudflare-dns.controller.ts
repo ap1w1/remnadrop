@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Roles } from '@common/decorators/roles/roles';
 import { ApiScopeResource } from '@common/decorators/scopes';
 import { JwtDefaultGuard } from '@common/guards/jwt-guards/def-jwt-guard';
@@ -7,6 +7,7 @@ import { ScopesGuard } from '@common/guards/scopes';
 import { ROLE } from '@libs/contracts/constants';
 import { PrismaService } from '@common/database/prisma.service';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { Request } from 'express';
 import { CloudflareDnsService } from './cloudflare-dns.service';
 
 @Controller('cloudflare-dns')
@@ -40,6 +41,7 @@ export class CloudflareDnsWebhookController {
  constructor(private readonly cf:CloudflareDnsService,private readonly db:PrismaService){}
  @Post('node-ip-changed')
  async rotated(
+   @Req() request:Request & {rawBody?:Buffer},
    @Body() body:{eventId:string;nodeUuid:string;oldIp:string;newIp:string},
    @Headers('x-webhook-event-id') id:string|undefined,
    @Headers('x-webhook-timestamp') timestamp:string|undefined,
@@ -47,12 +49,12 @@ export class CloudflareDnsWebhookController {
  ){
    const secret=process.env.CLOUDFLARE_DNS_INCOMING_SECRET;
    if(!secret||secret.length<32)throw new UnauthorizedException('Incoming Cloudflare DNS webhook disabled');
-   if(!id||!timestamp||!signature||body?.eventId!==id||!/^[\da-f-]{36}$/i.test(id))
+   if(!id||!timestamp||!signature||!request.rawBody||request.rawBody.length>65536||body?.eventId!==id||!/^[\da-f-]{36}$/i.test(id))
      throw new UnauthorizedException('Invalid webhook headers');
    const epoch=Number(timestamp);
    if(!Number.isSafeInteger(epoch)||Math.abs(Date.now()-epoch*1000)>300000)
      throw new UnauthorizedException('Webhook timestamp outside permitted window');
-   const expected=createHmac('sha256',secret).update(timestamp+'.'+JSON.stringify(body)).digest('hex');
+   const expected=createHmac('sha256',secret).update(timestamp+'.').update(request.rawBody).digest('hex');
    const given=signature.toLowerCase().replace(/^sha256=/,'');
    if(!/^[0-9a-f]{64}$/.test(given)||!timingSafeEqual(Buffer.from(given,'hex'),Buffer.from(expected,'hex')))
      throw new UnauthorizedException('Invalid webhook signature');
