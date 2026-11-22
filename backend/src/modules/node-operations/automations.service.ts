@@ -10,20 +10,25 @@ import { postSignedWebhook } from '@modules/squad-quotas/quota-webhooks.service'
 import { DpiCheckerService, DpiLocation } from './dpi-checker.service';
 import { NodeIpService } from './node-ip.service';
 import { CloudflareDnsService } from './cloudflare-dns.service';
+import { evaluateDpiRegions, type DpiCheckEvidence, type DpiVerdict } from './automation-dpi-evaluator';
 
-export type AutomationAction =
-    | { type: 'dpi_check'; hosts: string[]; location: DpiLocation }
+export type DpiRegion = { location: DpiLocation; pop_ids?: number[] };
+export type DpiGate = { minUnavailableRegions: number; timeoutMinutes: number };
+export type AutomationAction = (
+    | { type: 'dpi_check'; hosts: string[]; location: DpiLocation; pop_ids?: number[]; locations?: DpiRegion[]; gate?: DpiGate }
     | { type: 'hide_hosts' | 'show_hosts'; hosts: string[] }
     | { type: 'rotate_ip'; updateCloudflare?: boolean }
     | { type: 'webhook'; url: string }
     | { type: 'cloudflare_dns'; accountId: string; zoneId: string; recordId: string;
-        ipSource: 'static' | 'rotated'; newIp?: string; expectedOldIp?: string; domain?: string };
+        ipSource: 'static' | 'rotated'; newIp?: string; expectedOldIp?: string; domain?: string }
+    ) & { when?: 'always' | 'dpi_unavailable' | 'dpi_available' | 'dpi_unknown' };
 
 export type AutomationInput = {
     node_uuid: string | null;
     name: string;
     enabled: boolean;
-    trigger_type: 'online_drop' | 'node_offline' | 'interval' | 'manual';
+    trigger_type: 'online_drop' | 'online_value' | 'node_offline' | 'interval' | 'manual';
+    online_operator: 'gt' | 'lt' | 'eq'; online_value: number;
     drop_percent: number;
     min_online: number;
     duration_minutes: number;
@@ -44,7 +49,9 @@ type TriggerState = {
 };
 type ActionDetail = {
     index: number; type: string; title: string; success: boolean;
-    status: 'completed' | 'failed' | 'skipped'; message: string; startedAt: string; finishedAt: string;
+    status: 'completed' | 'failed' | 'skipped' | 'pending'; message: string; startedAt: string; finishedAt: string;
+    jobs?: {id:string;location:string;popIds:number[];popRegions:Record<string,string>;popNames:Record<string,string>;hostCount:number}[];
+    outcome?: DpiVerdict; rotation?: {previousIp:string;newIp:string};
 };
 
 const UUID = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
@@ -67,6 +74,7 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
     const rule: AutomationInput = {
         node_uuid: input.node_uuid || null, name: typeof input.name === 'string' ? input.name.trim() : '',
         enabled: input.enabled ?? false, trigger_type: input.trigger_type ?? 'online_drop',
+        online_operator: input.online_operator ?? 'lt', online_value: input.online_value ?? 10,
         drop_percent: input.drop_percent ?? 50, min_online: input.min_online ?? 5,
         duration_minutes: input.duration_minutes ?? 5, cooldown_minutes: input.cooldown_minutes ?? 60,
         interval_minutes: input.interval_minutes ?? 60, failure_policy: input.failure_policy ?? 'continue',
@@ -74,10 +82,12 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
     };
     if (rule.name.length < 2 || rule.name.length > 80) throw new BadRequestException('Название должно содержать 2–80 символов');
     if (typeof rule.enabled !== 'boolean') throw new BadRequestException('Некорректное состояние правила');
-    if (!['online_drop','node_offline','interval','manual'].includes(rule.trigger_type)) throw new BadRequestException('Неизвестное условие запуска');
+    if (!['online_drop','online_value','node_offline','interval','manual'].includes(rule.trigger_type)) throw new BadRequestException('Неизвестное условие запуска');
     if (!['stop','continue'].includes(rule.failure_policy)) throw new BadRequestException('Выберите поведение при ошибке');
     if (rule.node_uuid !== null) assertId(rule.node_uuid, 'ноды');
-    if (['online_drop','node_offline'].includes(rule.trigger_type) && !rule.node_uuid) throw new BadRequestException('Для этого условия выберите ноду');
+    if (!['gt','lt','eq'].includes(rule.online_operator) || !Number.isInteger(rule.online_value) || rule.online_value < 0 || rule.online_value > 1000000)
+        throw new BadRequestException('Укажите оператор и целое значение онлайна от 0 до 1000000');
+    if (['online_drop','online_value','node_offline'].includes(rule.trigger_type) && !rule.node_uuid) throw new BadRequestException('Для этого условия выберите ноду');
     for (const [key,min,max] of [
         ['drop_percent',1,100], ['min_online',0,1000000], ['duration_minutes',1,1440],
         ['cooldown_minutes',1,10080], ['interval_minutes',5,525600],
@@ -86,21 +96,51 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
     }
     if (rule.trigger_type === 'interval' && rule.cooldown_minutes > rule.interval_minutes) throw new BadRequestException('Пауза между запусками не может быть больше интервала');
     if (!Array.isArray(rule.actions) || rule.actions.length < 1 || rule.actions.length > 8) throw new BadRequestException('Добавьте от 1 до 8 действий');
-    let rotationSeen = false;
+    let rotationSeen = false, rotationWhen: string | undefined, gateSeen = false, dpiSeen = false;
     for (const action of rule.actions) {
         if (!action || typeof action !== 'object' || Array.isArray(action)) throw new BadRequestException('Некорректное действие');
+        if (action.when !== undefined && !['always','dpi_unavailable','dpi_available','dpi_unknown'].includes(action.when))
+            throw new BadRequestException('Некорректная ветка выполнения');
+        if (action.when && action.when !== 'always' && !gateSeen) throw new BadRequestException('Для ветки сначала добавьте DPI-проверку с ожиданием результата');
+        if (action.type !== 'dpi_check' && gateSeen && ['rotate_ip','cloudflare_dns','hide_hosts'].includes(action.type) && action.when !== 'dpi_unavailable')
+            throw new BadRequestException('После DPI-проверки смена IP, DNS и скрытие хостов допускаются только в ветке «Недоступно»');
         if (action.type === 'rotate_ip') {
+            if (dpiSeen && !gateSeen) throw new BadRequestException('Смену IP после DPI можно делать только после ожидания результатов и в ветке «Недоступно»');
             if (!rule.node_uuid) throw new BadRequestException('Для смены IP выберите ноду');
             if (rotationSeen) throw new BadRequestException('Одна автоматизация может менять IP ноды только один раз');
             if (action.updateCloudflare !== undefined && typeof action.updateCloudflare !== 'boolean') throw new BadRequestException('Некорректная настройка Cloudflare');
-            rotationSeen = true;
+            rotationSeen = true; rotationWhen = action.when;
         } else if (action.type === 'hide_hosts' || action.type === 'show_hosts' || action.type === 'dpi_check') {
             if (!rule.node_uuid) throw new BadRequestException('Для действий с хостами выберите ноду');
             if (!Array.isArray(action.hosts) || !action.hosts.length || action.hosts.length > 20 ||
                 action.hosts.some(id => typeof id !== 'string' || !UUID.test(id)) || new Set(action.hosts).size !== action.hosts.length) {
                 throw new BadRequestException('Выберите от 1 до 20 разных хостов');
             }
-            if (action.type === 'dpi_check' && !REGIONS.includes(action.location)) throw new BadRequestException('Выберите регион проверки');
+            if (action.type === 'dpi_check') {
+                dpiSeen = true;
+                if (gateSeen) throw new BadRequestException('Не более одной DPI-проверки с условным ветвлением в одном правиле');
+                if (action.when && action.when !== 'always') throw new BadRequestException('Сама DPI-проверка запускается без условия ветки');
+                if (!REGIONS.includes(action.location)) throw new BadRequestException('Выберите страну проверки');
+                if (action.pop_ids !== undefined && (!Array.isArray(action.pop_ids) || action.pop_ids.length<1 || action.pop_ids.length>100 || action.pop_ids.some(id=>!Number.isInteger(id)||id<=0) || new Set(action.pop_ids).size !== action.pop_ids.length))
+                    throw new BadRequestException('Выберите до 100 уникальных точек проверки (PoP)');
+                if (action.locations !== undefined) {
+                    if (!Array.isArray(action.locations) || !action.locations.length || action.locations.length > 5)
+                        throw new BadRequestException('Выберите от 1 до 5 стран для DPI-проверки');
+                    if (new Set(action.locations.map(item=>item.location)).size !== action.locations.length)
+                        throw new BadRequestException('Страны DPI не должны повторяться');
+                    for (const target of action.locations) {
+                        if (!target || !REGIONS.includes(target.location)) throw new BadRequestException('Некорректная страна DPI');
+                        if (target.pop_ids !== undefined && (!Array.isArray(target.pop_ids) || !target.pop_ids.length || target.pop_ids.length > 100 || target.pop_ids.some(id=>!Number.isSafeInteger(id)||id<=0) || new Set(target.pop_ids).size!==target.pop_ids.length))
+                            throw new BadRequestException('Некорректные точки проверки DPI');
+                    }
+                }
+                if (action.gate !== undefined) {
+                    if (!Number.isInteger(action.gate.minUnavailableRegions) || action.gate.minUnavailableRegions<1 || action.gate.minUnavailableRegions>100 ||
+                        !Number.isInteger(action.gate.timeoutMinutes) || action.gate.timeoutMinutes<3 || action.gate.timeoutMinutes>45)
+                        throw new BadRequestException('Укажите порог регионов 1–100 и ожидание 3–45 минут');
+                    gateSeen = true;
+                }
+            }
         } else if (action.type === 'webhook') {
             let url: URL;
             try { url = new URL(action.url); } catch { throw new BadRequestException('Укажите корректный HTTPS-адрес вебхука'); }
@@ -110,6 +150,7 @@ export function validateAutomation(input: Partial<AutomationInput>): AutomationI
             if (!CF_ID.test(action.zoneId) || !CF_ID.test(action.recordId)) throw new BadRequestException('Выберите домен и DNS-запись');
             if (!['static','rotated'].includes(action.ipSource)) throw new BadRequestException('Выберите источник IP');
             if (action.ipSource === 'rotated' && !rotationSeen) throw new BadRequestException('Перед обновлением DNS добавьте действие «Сменить IP ноды»');
+            if (action.ipSource === 'rotated' && gateSeen && rotationWhen !== action.when) throw new BadRequestException('Ветка DNS должна совпадать с веткой смены IP');
             if (action.ipSource === 'static' && (typeof action.newIp !== 'string' || !isIP(action.newIp))) throw new BadRequestException('Укажите корректный IPv4 или IPv6');
             if (action.expectedOldIp !== undefined && (typeof action.expectedOldIp !== 'string' || !isIP(action.expectedOldIp))) throw new BadRequestException('Укажите корректный ожидаемый старый IP');
         } else throw new BadRequestException('Неизвестное действие автоматизации');
@@ -142,7 +183,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
     }
     async options() {
         const [nodes,hosts] = await Promise.all([
-            this.db.$queryRaw`SELECT uuid,name FROM nodes ORDER BY name`,
+            this.db.$queryRaw`SELECT uuid,name,address,country_code AS "countryCode" FROM nodes ORDER BY name`,
             this.db.$queryRaw`SELECT h.uuid,h.remark,h.address,h.is_hidden,
                 COALESCE(array_agg(hn.node_uuid) FILTER (WHERE hn.node_uuid IS NOT NULL),'{}'::uuid[]) AS node_uuids
                 FROM hosts h LEFT JOIN hosts_to_nodes hn ON hn.host_uuid=h.uuid GROUP BY h.uuid ORDER BY h.remark`,
@@ -152,7 +193,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
     async executions(query: { ruleId?: string; status?: string; limit?: string; before?: string; cursor?:string } = {}) {
         if (query.ruleId) assertId(query.ruleId);
         if (query.cursor) assertId(query.cursor,'курсора');
-        if (query.status && !['running','completed','partial_failure','failed'].includes(query.status)) throw new BadRequestException('Неизвестный статус');
+        if (query.status && !['running','waiting_dpi','completed','partial_failure','failed'].includes(query.status)) throw new BadRequestException('Неизвестный статус');
         const limit = query.limit === undefined ? 50 : Number(query.limit);
         if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('Размер страницы: 1–100');
         if (query.before && Number.isNaN(Date.parse(query.before))) throw new BadRequestException('Некорректная дата');
@@ -201,8 +242,8 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
         await this.validateResources(rule);
         await this.checkDnsActions(rule);
         await this.db.$executeRaw`INSERT INTO node_automation_rules
-            (node_uuid,name,enabled,trigger_type,drop_percent,min_online,duration_minutes,cooldown_minutes,interval_minutes,failure_policy,actions)
-            VALUES(${rule.node_uuid}::uuid,${rule.name},${rule.enabled},${rule.trigger_type},${rule.drop_percent},${rule.min_online},
+            (node_uuid,name,enabled,trigger_type,online_operator,online_value,drop_percent,min_online,duration_minutes,cooldown_minutes,interval_minutes,failure_policy,actions)
+            VALUES(${rule.node_uuid}::uuid,${rule.name},${rule.enabled},${rule.trigger_type},${rule.online_operator},${rule.online_value},${rule.drop_percent},${rule.min_online},
                 ${rule.duration_minutes},${rule.cooldown_minutes},${rule.interval_minutes},${rule.failure_policy},${JSON.stringify(rule.actions)}::jsonb)`;
         return this.list();
     }
@@ -213,10 +254,11 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
         await this.checkDnsActions(rule);
         const changed = await this.db.$executeRaw`UPDATE node_automation_rules
             SET node_uuid=${rule.node_uuid}::uuid,name=${rule.name},enabled=${rule.enabled},trigger_type=${rule.trigger_type},
+                online_operator=${rule.online_operator},online_value=${rule.online_value},
                 drop_percent=${rule.drop_percent},min_online=${rule.min_online},duration_minutes=${rule.duration_minutes},
                 cooldown_minutes=${rule.cooldown_minutes},interval_minutes=${rule.interval_minutes},failure_policy=${rule.failure_policy},
                 actions=${JSON.stringify(rule.actions)}::jsonb,updated_at=now(),revision=revision+1,pending_since=NULL
-            WHERE id=${existing.id}::uuid AND (execution_lease_until IS NULL OR execution_lease_until<now())`;
+            WHERE id=${existing.id}::uuid AND active_execution_id IS NULL`;
         if (!changed) throw new ConflictException('Правило выполняется. Дождитесь завершения перед редактированием');
         return this.list();
     }
@@ -238,8 +280,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
     }
     async remove(id: string) {
         await this.one(id);
-        const changed = await this.db.$executeRaw`DELETE FROM node_automation_rules WHERE id=${id}::uuid
-            AND (execution_lease_until IS NULL OR execution_lease_until<now())`;
+        const changed = await this.db.$executeRaw`DELETE FROM node_automation_rules WHERE id=${id}::uuid AND active_execution_id IS NULL`;
         if (!changed) throw new ConflictException('Правило выполняется. Дождитесь завершения перед удалением');
         return { response: { success: true } };
     }
@@ -272,10 +313,17 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
         const row = samples[0];
         if (!row || row.available === null || !row.sampled_at) { state.reason = 'Нет свежих метрик за последние 3 минуты'; return state; }
         state.online = row.online; state.baseline = row.baseline; state.sampledAt = row.sampled_at;
-        if (row.available === 0) {
-            // Preserve the existing online_drop behavior for confirmed disconnected nodes.
+        if (row.available === 0 && rule.trigger_type !== 'online_value') {
+            // Preserve existing offline handling; absolute online comparisons require a valid measurement.
             state.matched = true; state.reason = 'Нода недоступна по последнему замеру';
         } else if (rule.trigger_type === 'node_offline') state.reason = 'Нода доступна';
+        else if (rule.trigger_type === 'online_value') {
+            if (row.available !== 1) { state.reason = 'Нода недоступна: сравнение онлайна пропущено'; return state; }
+            if (row.online === null || !Number.isFinite(row.online)) { state.reason = 'Нет достоверного значения онлайна'; return state; }
+            const operator = rule.online_operator ?? 'lt'; const limit = rule.online_value ?? 10;
+            state.matched = operator === 'gt' ? row.online > limit : operator === 'eq' ? row.online === limit : row.online < limit;
+            state.reason = `Онлайн ${row.online}, условие ${operator === 'gt' ? '>' : operator === 'eq' ? '=' : '<'} ${limit}${state.matched ? ' выполнено' : ' не выполнено'}`;
+        }
         else if (row.online === null || row.baseline === null || row.sample_count < 3 || row.baseline < rule.min_online || row.baseline <= 0) state.reason = 'Недостаточно исходного онлайна или замеров для сравнения';
         else {
             state.dropPercent = Math.max(0,100*(1-row.online/row.baseline));
@@ -343,12 +391,12 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
             WITH claimed AS (
                 UPDATE node_automation_rules SET active_execution_id=${id}::uuid,
                     execution_lease_until=now()+interval '15 minutes',last_run_at=now(),pending_since=NULL
-                WHERE id=${rule.id}::uuid AND revision=${rule.revision}
+                WHERE id=${rule.id}::uuid AND revision=${rule.revision} AND active_execution_id IS NULL
                     AND (execution_lease_until IS NULL OR execution_lease_until<now())
                     AND (${source}='manual' OR (enabled AND
                         (last_run_at IS NULL OR last_run_at<now()-${rule.cooldown_minutes}::int*interval '1 minute')
                         AND ((trigger_type='interval' AND COALESCE(last_run_at,created_at)<=now()-interval_minutes*interval '1 minute')
-                            OR (trigger_type IN ('online_drop','node_offline') AND pending_since IS NOT NULL
+                            OR (trigger_type IN ('online_drop','online_value','node_offline') AND pending_since IS NOT NULL
                                 AND pending_since<=now()-duration_minutes*interval '1 minute'))))
                 RETURNING id)
             INSERT INTO node_automation_executions(id,rule_id,source,rule_name,node_uuid,trigger_snapshot,rule_snapshot)
@@ -369,9 +417,121 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
         void this.execute(rule,executionId).catch(error => this.logger.error(`Execution ${executionId}: ${errorMessage(error)}`));
         return { response: { executionId, status: 'running' } };
     }
-    private async execute(rule: Rule, id: string) {
-        const details: ActionDetail[] = [];
-        let rotation: {previousIp:string;newIp:string}|null = null, failure = false, leaseLost = false, heartbeatBusy = false;
+    private async prepareDpiGate(action: Extract<AutomationAction, {type:'dpi_check'}>) {
+        const checks = action.locations?.length ? action.locations : [{location:action.location,pop_ids:action.pop_ids}];
+        const created: {id:string;location:string;popIds:number[];popRegions:Record<string,string>;
+            popNames:Record<string,string>;hostCount:number;cost:number}[] = [];
+        try {
+            for (const check of checks) {
+                const prepared = await this.dpi.prepare({hosts:action.hosts,location:check.location,pop_ids:check.pop_ids});
+                const jobId = prepared.response.id;
+                const job = (await this.dpi.one(jobId)).response as {pop_ids:number[]};
+                const cost = Number((prepared.response.estimate as {estimated_cost?:unknown})?.estimated_cost ?? NaN);
+                const popIds = job.pop_ids;
+                if (!Array.isArray(popIds) || !popIds.length || !Number.isFinite(cost) || cost < 0)
+                    throw new BadRequestException('DPI Checker не вернул допустимую цену или список точек проверки');
+                const entry = {id:jobId,location:check.location,popIds,
+                    popRegions:{} as Record<string,string>,popNames:{} as Record<string,string>,
+                    hostCount:action.hosts.length,cost};
+                created.push(entry);
+                // PoP metadata is needed to classify distinct *geographic regions*.
+                // If the API omits it, verdict will remain unknown and failover is forbidden.
+                try {
+                    const data = await this.dpi.pops(check.location,false);
+                    const pops: {id:number;region?:string;city?:string;name?:string}[] =
+                        Array.isArray(data) ? data : Array.isArray(data?.pops) ? data.pops : [];
+                    for (const pop of pops) {
+                        if (!popIds.includes(pop.id)) continue;
+                        if (pop.region || pop.city) entry.popRegions[String(pop.id)] = String(pop.region || pop.city);
+                        if (pop.name) entry.popNames[String(pop.id)] = pop.name;
+                    }
+                } catch (error) {
+                    this.logger.warn('Не удалось загрузить метаданные PoP: '+errorMessage(error));
+                }
+            }
+            const total = created.reduce((sum,job)=>sum+job.cost,0);
+            if (total > this.dpiCostLimit()+1e-6)
+                throw new BadRequestException('Суммарная стоимость DPI-проверок превышает предел $'+this.dpiCostLimit());
+            let spent = 0;
+            for (const job of created) {
+                await this.dpi.start(job.id,Math.max(0,this.dpiCostLimit()-spent));
+                spent += job.cost;
+            }
+            return created.map(({cost,...job})=>job);
+        } catch (error) {
+            // Cancel only prepared/queued checks. A completed charge cannot be undone.
+            for (const job of created) await this.dpi.cancel(job.id).catch(()=>undefined);
+            throw error;
+        }
+    }
+
+    /** Resume a persisted DPI gate after restart; only confirmed results unlock a branch. */
+    private async resumeDpiGates() {
+        const pending = await this.db.$queryRaw<{id:string;rule_id:string|null;source:string;details:ActionDetail[]}[]>`
+            SELECT id,rule_id,source,details FROM node_automation_executions
+            WHERE status='waiting_dpi' ORDER BY started_at LIMIT 25`;
+        for (const execution of pending) {
+            if (!execution.rule_id) continue;
+            let claimed=false;
+            try {
+                const oldDetails=Array.isArray(execution.details)?execution.details:[];
+                const waiting=oldDetails.find(detail=>detail.type==='dpi_check'&&detail.status==='pending');
+                if (!waiting || !waiting.jobs?.length) throw new Error('Нет сохранённых заданий DPI');
+                const actionIndex=waiting.index;
+                const rule=await this.one(execution.rule_id);
+                const action=rule.actions[actionIndex] as Extract<AutomationAction,{type:'dpi_check'}> | undefined;
+                if (!action || action.type!=='dpi_check' || !action.gate) throw new Error('Правило DPI изменилось во время ожидания');
+                const timeout = Date.now() - Date.parse(waiting.startedAt) > action.gate.timeoutMinutes*60000;
+                const evidence:DpiCheckEvidence[]=[];
+                let complete=true;
+                for (const meta of waiting.jobs) {
+                    const job=(await this.dpi.one(meta.id)).response as {status:string;results:unknown;pop_ids:number[]};
+                    if (job.status==='pending'||job.status==='running'||job.status==='prepared') complete=false;
+                    evidence.push({location:meta.location,status:job.status,pop_ids:meta.popIds,
+                        popRegions:meta.popRegions,popNames:meta.popNames,results:job.results,hostCount:meta.hostCount});
+                }
+                if (!complete && !timeout) continue;
+                const acquired=await this.db.$executeRaw`
+                    UPDATE node_automation_rules SET execution_lease_until=now()+interval '15 minutes'
+                    WHERE id=${rule.id}::uuid AND active_execution_id=${execution.id}::uuid
+                      AND (execution_lease_until IS NULL OR execution_lease_until<now())`;
+                if (!acquired) continue;
+                claimed=true;
+                // Disabling a rule while its paid DPI measurement runs MUST prevent automatic failover.
+                if (execution.source==='automatic' && !rule.enabled)
+                    throw new Error('Правило отключено во время ожидания DPI');
+                const result = complete ? evaluateDpiRegions(evidence,action.gate.minUnavailableRegions) :
+                    {outcome:'unknown' as const,unavailableRegions:0,availableRegions:0,unknownRegions:1,
+                        totalRegions:0,details:['Время ожидания DPI истекло']};
+                const next = oldDetails.map(detail => detail === waiting ? {
+                    ...detail,status:'completed' as const,success:result.outcome!=='unknown',
+                    outcome:result.outcome,finishedAt:new Date().toISOString(),
+                    message:`DPI: ${result.outcome}; недоступно регионов ${result.unavailableRegions}, доступно ${result.availableRegions}, неопределённо ${result.unknownRegions}. ${result.details.join('; ').slice(0,500)}`,
+                } : detail);
+                const updated=await this.db.$executeRaw`
+                    UPDATE node_automation_executions SET status='running',details=${JSON.stringify(next)}::jsonb
+                    WHERE id=${execution.id}::uuid AND status='waiting_dpi'`;
+                if (!updated) continue;
+                await this.execute(rule,execution.id,next);
+            } catch (error) {
+                this.logger.warn(`DPI gate ${execution.id}: ${errorMessage(error)}`);
+                if (claimed) {
+                    await this.db.$executeRaw`UPDATE node_automation_executions
+                        SET status='failed',finished_at=now(),
+                        details=details || ${JSON.stringify([{type:'execution',title:'DPI-проверка',status:'failed',success:false,message:'Невозможно завершить проверку. Failover не выполнялся.',startedAt:new Date().toISOString(),finishedAt:new Date().toISOString()}])}::jsonb
+                        WHERE id=${execution.id}::uuid AND status IN ('waiting_dpi','running')`.catch(()=>undefined);
+                    await this.db.$executeRaw`UPDATE node_automation_rules SET active_execution_id=NULL,execution_lease_until=NULL
+                        WHERE id=${execution.rule_id}::uuid AND active_execution_id=${execution.id}::uuid`.catch(()=>undefined);
+                }
+            }
+        }
+    }
+
+    private async execute(rule: Rule, id: string, previousDetails: ActionDetail[] = []) {
+        const details: ActionDetail[] = [...previousDetails];
+        let rotation: {previousIp:string;newIp:string}|null = previousDetails.find(detail=>detail.rotation)?.rotation ?? null;
+        let gateOutcome: DpiVerdict | null = previousDetails.find(detail=>detail.type==='dpi_check'&&detail.outcome)?.outcome ?? null;
+        let failure = previousDetails.some(detail=>detail.status==='failed'), leaseLost = false, heartbeatBusy = false, waiting = false;
         const heartbeat = setInterval(() => {
             if (heartbeatBusy || leaseLost) return;
             heartbeatBusy = true;
@@ -395,7 +555,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
                     if (!owned) { leaseLost = true; throw new ConflictException('Выполнение прервано: право на запуск больше не принадлежит этой операции'); }
                     let message = '';
                     if (action.type === 'dpi_check') {
-                        const prepared = await this.dpi.prepare({hosts:action.hosts,location:action.location});
+                        const prepared = await this.dpi.prepare({hosts:action.hosts,location:action.location,pop_ids:action.pop_ids});
                         try { await this.dpi.start(prepared.response.id,this.dpiCostLimit()); }
                         catch (error) { await this.dpi.cancel(prepared.response.id).catch(() => undefined); throw error; }
                         message = `Проверка запущена: ${prepared.response.id}`;

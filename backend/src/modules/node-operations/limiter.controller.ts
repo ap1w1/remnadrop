@@ -6,6 +6,7 @@ import { RolesGuard } from '@common/guards/roles';
 import { ScopesGuard } from '@common/guards/scopes';
 import { ROLE } from '@libs/contracts/constants';
 import { LimiterService } from './limiter.service';
+import { LimiterOutboundWebhookService } from './limiter-outbound-webhook.service';
 import { LimiterRunnerService } from './limiter-runner.service';
 import { LimiterCredentialsService } from './limiter-credentials.service';
 
@@ -14,8 +15,10 @@ import { LimiterCredentialsService } from './limiter-credentials.service';
 @ApiScopeResource('users')
 @UseGuards(JwtDefaultGuard,RolesGuard,ScopesGuard)
 export class LimiterController {
- constructor(private readonly limiter:LimiterService,private readonly credentials:LimiterCredentialsService,private readonly runner:LimiterRunnerService){}
+ constructor(private readonly limiter:LimiterService,private readonly credentials:LimiterCredentialsService,
+    private readonly runner:LimiterRunnerService,private readonly outbound:LimiterOutboundWebhookService){}
  @Get('settings') settings(){return this.limiter.settings();}
+ @Get('outbound-webhook/status') outboundStatus(){return this.outbound.status();}
  @Get('status') status(){return this.runner.status();}
  @Put('settings') update(@Body() input:unknown){return this.limiter.update(input);}
  @Get('settings/runtime') runtimeSettings(){return this.limiter.runtimeSettings();}

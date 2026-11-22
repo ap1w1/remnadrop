@@ -12,6 +12,7 @@ export function LimiterSettingsPage(){
  const [credentials,setCredentials]=useState<Credentials>({configured:false,telegramConfigured:false,maxmindConfigured:false,telegramChatId:'',telegramAdminIds:'',sharedHwidSquadUuids:[]})
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[credentialsBusy,setCredentialsBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
  const [confirm,setConfirm]=useState<'auto'|'remove'|'defaults'|null>(null)
+ const [outbound,setOutbound]=useState<{configured:boolean;destination:string|null;events:string[];pending:number;failed:number;delivered:number}|null>(null)
  const [runtimeItems,setRuntimeItems]=useState<Array<{Key:string;Title:string;Display:string;Overridden:boolean}>>([]),[resetKey,setResetKey]=useState<string|null>(null),[resetBusy,setResetBusy]=useState(false)
  const [telegramToken,setTelegramToken]=useState(''),[telegramChat,setTelegramChat]=useState(''),[telegramAdmins,setTelegramAdmins]=useState('')
  const [maxmindKey,setMaxmindKey]=useState(''),[hwidSquads,setHwidSquads]=useState(''),[ipText,setIpText]=useState('')
@@ -19,6 +20,7 @@ export function LimiterSettingsPage(){
  const applyCredentials=(value:Credentials)=>{setCredentials(value);setTelegramChat(value.telegramChatId);setTelegramAdmins(value.telegramAdminIds);setHwidSquads(value.sharedHwidSquadUuids.join(', '));setTelegramToken('');setMaxmindKey('')}
  useEffect(()=>{void Promise.all([instance.get(api+'/settings'),instance.get(api+'/credentials'),instance.get('/api/nodes')]).then(([a,b,c])=>{apply(a.data.response);applyCredentials(b.data.response);setNodes(c.data.response)}).catch(e=>setError(errMessage(e))).finally(()=>setLoading(false))},[])
  useEffect(()=>{void instance.get(api+'/settings/runtime').then(result=>setRuntimeItems(result.data.response)).catch(()=>{})},[])
+ useEffect(()=>{let active=true;const load=()=>void instance.get(api+'/outbound-webhook/status').then(result=>{if(active)setOutbound(result.data.response)}).catch(()=>{});load();const timer=setInterval(load,20000);return()=>{active=false;clearInterval(timer)}},[])
  const change=<K extends keyof Settings>(key:K,value:Settings[K])=>setSettings(config=>({...config,[key]:value}))
  const dirty=JSON.stringify(settings)!==JSON.stringify(saved)||ipText!==saved.ignoredIps.join(', ')
  const save=async(confirmed=false)=>{
@@ -73,6 +75,13 @@ export function LimiterSettingsPage(){
      <Divider/><Text size="sm">Исключения пользователей добавляются из события. На вкладке «Исключения» видно, когда закончится срок игнорирования.</Text><Group><Button h={44} component={Link} to={limiterPath} variant="light">Перейти к событиям</Button></Group>
     </Stack></Card></Tabs.Panel>
     <Tabs.Panel value="notifications"><Stack gap="md"><Card withBorder radius="md" p="lg"><Stack gap="md"><Title order={4}>Уведомления, отчёты и журнал</Title>{toggle('telegramNotifications','Дублировать события и действия в Telegram','Когда выключено, автоматические сообщения не отправляются. Команды и кнопки бота продолжают работать.')}{toggle('dailyReport','Сохранять ежедневный отчёт')}{toggle('updateCheck','Проверять новые версии Limiter')}<Select label="Подробность журнала" allowDeselect={false} value={settings.logLevel} onChange={v=>change('logLevel',v??'info')} data={[{value:'error',label:'Только ошибки'},{value:'warn',label:'Предупреждения'},{value:'info',label:'Обычная'},{value:'debug',label:'Подробная'},{value:'trace',label:'Максимальная'}]}/></Stack></Card>
+     <Card withBorder radius="md" p="lg"><Stack gap="sm">
+      <Group justify="space-between"><Title order={4}>Исходящие вебхуки Limiter</Title><Badge color={outbound?.configured?'teal':'gray'} variant="light">{outbound?.configured?'Подключён':'Не настроен'}</Badge></Group>
+      <Text size="sm" c="dimmed">События и действия из Limiter можно отправлять в стороннюю HTTPS-систему с HMAC-подписью. Секрет не показывается в браузере.</Text>
+      {outbound?.configured?<><Text size="sm">Получатель: {outbound.destination}</Text><SimpleGrid cols={{base:1,sm:3}}><Text size="sm">В очереди: {outbound.pending}</Text><Text size="sm">Доставлено: {outbound.delivered}</Text><Text size="sm" c={outbound.failed?'red':'dimmed'}>Не доставлено: {outbound.failed}</Text></SimpleGrid><Text size="xs" c="dimmed">События: {outbound.events.join(', ')}</Text></>:
+       <Alert color="blue">Чтобы включить отправку, укажите в окружении контейнера LIMITER_OUTBOUND_WEBHOOK_URL (публичный HTTPS), LIMITER_OUTBOUND_WEBHOOK_SECRET (не менее 32 символов). Типы событий выбираются через LIMITER_OUTBOUND_WEBHOOK_EVENTS. После изменения перезапустите приложение.</Alert>}
+      <Text size="xs" c="dimmed">Повторная доставка с экспоненциальной задержкой; после 12 неудачных попыток событие остаётся в журнале. События от прошлого адреса не пересылаются на новый адрес.</Text>
+     </Stack></Card>
      <Card withBorder radius="md" p="lg"><Stack gap="md"><Group justify="space-between"><Title order={4}>Telegram</Title><Badge variant="light" color={credentials.telegramConfigured?'teal':'gray'}>{credentials.telegramConfigured?'Подключён':'Не подключён'}</Badge></Group><Text size="sm" c="dimmed">Необязательно. Получайте события и управляйте пользователями также из бота.</Text>
       <PasswordInput label="Токен бота" autoComplete="new-password" placeholder={credentials.telegramConfigured?'Сохранён · оставьте пустым, чтобы не менять':'Токен от BotFather'} value={telegramToken} onChange={e=>setTelegramToken(e.currentTarget.value)}/>
       <SimpleGrid cols={{base:1,sm:2}}><TextInput label="Chat ID" value={telegramChat} onChange={e=>setTelegramChat(e.currentTarget.value)} placeholder="-1001234567890"/><TextInput label="ID администраторов" description="Telegram ID через запятую" value={telegramAdmins} onChange={e=>setTelegramAdmins(e.currentTarget.value)}/></SimpleGrid>

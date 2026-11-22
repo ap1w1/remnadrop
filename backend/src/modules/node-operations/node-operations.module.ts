@@ -10,6 +10,7 @@ import { NodeIpController } from './node-ip.controller';
 import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
 import { LimiterService } from './limiter.service';
+import { LimiterOutboundWebhookService } from './limiter-outbound-webhook.service';
 import { LimiterCredentialsService } from './limiter-credentials.service';
 import { LimiterBridgeSecretsService } from './limiter-bridge-secrets.service';
 import { LimiterRunnerService } from './limiter-runner.service';
@@ -23,7 +24,7 @@ import { LimiterWebhookController } from './limiter-webhook.controller';
 
 @Module({
   imports:[CqrsModule,UsersModule,SubscriptionTemplateModule],
-  providers:[DpiCheckerService,DpiCredentialsService,NodeIpService,CloudflareDnsService,AutomationsService,LimiterBridgeSecretsService,LimiterService,LimiterCredentialsService,LimiterRunnerService,LimiterControlService,LimiterBridgeGuard],
+  providers:[DpiCheckerService,DpiCredentialsService,NodeIpService,CloudflareDnsService,AutomationsService,LimiterBridgeSecretsService,LimiterService,LimiterOutboundWebhookService,LimiterCredentialsService,LimiterRunnerService,LimiterControlService,LimiterBridgeGuard],
   controllers:[DpiCheckerController,NodeIpController,AutomationsController,LimiterController,CloudflareDnsController,CloudflareDnsWebhookController,DiskMetricsController,LimiterBridgeController,LimiterWebhookController],
 })
 export class NodeOperationsModule {}

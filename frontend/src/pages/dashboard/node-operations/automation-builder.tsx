@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { TbArrowDown, TbArrowUp, TbCheck, TbPlayerPlay, TbPlus, TbShieldCheck, TbTrash } from 'react-icons/tb'
 import { instance } from '@shared/api/axios'
+import { nodeOptionLabel } from '@shared/utils/misc/node-option-label'
 import {
     actionLabels, apiError, automationApi, freshAutomation, triggerLabels, triggerSummary,
     type AutomationAction, type AutomationHost, type AutomationInput, type AutomationNode,
@@ -78,6 +79,86 @@ function DnsActionFields({ action, accounts, hasRotation, onChange }: {
     </Stack>
 }
 
+
+type DpiAction = Extract<AutomationAction, { type: 'dpi_check' }>
+type DpiPop = { id: number; name?: string; city?: string; region?: string; operator?: string }
+type DpiRegion = {location:string; pop_ids?:number[]}
+const dpiCountries=[
+    {value:'russia',label:'Россия'}, {value:'russia_mobile',label:'Россия · мобильные сети'},
+    {value:'china',label:'Китай'}, {value:'iran',label:'Иран'}, {value:'turkmenistan',label:'Туркменистан'},
+]
+function DpiPointPicker({ target, onChange }: {target:DpiRegion;onChange:(region:DpiRegion)=>void}) {
+    const [pops,setPops]=useState<DpiPop[]>([])
+    const [loading,setLoading]=useState(false),[error,setError]=useState('')
+    const specific=target.pop_ids!==undefined
+    useEffect(()=>{
+        if (!specific) {setPops([]);return}
+        const controller=new AbortController()
+        setPops([]);setError('');setLoading(true)
+        void instance.get('/api/dpi-checker/pops',{params:{location:target.location},signal:controller.signal})
+            .then(response=>{
+                if (controller.signal.aborted) return
+                const data=response.data.response
+                setPops(Array.isArray(data)?data:Array.isArray(data?.pops)?data.pops:[])
+            })
+            .catch(cause=>{if(!controller.signal.aborted)setError(apiError(cause,'Не удалось загрузить географические точки'))})
+            .finally(()=>{if(!controller.signal.aborted)setLoading(false)})
+        return ()=>controller.abort()
+    },[target.location,specific])
+    return <Card withBorder radius="md" p="sm">
+        <Stack gap="sm">
+            <Text fw={600} size="sm">{dpiCountries.find(item=>item.value===target.location)?.label??target.location}</Text>
+            <Switch checked={specific} label="Выбрать конкретные регионы и точки (PoP)"
+                description="Иначе сервис автоматически выберет оптимальные точки"
+                onChange={e=>onChange({...target,pop_ids:e.currentTarget.checked?[]:undefined})}/>
+            {specific&&<MultiSelect label="Города, регионы и операторы" searchable clearable
+                maxValues={100} disabled={loading} placeholder={loading?'Загрузка…':'Поиск по городу, региону, оператору'}
+                value={(target.pop_ids??[]).map(String)}
+                onChange={values=>onChange({...target,pop_ids:values.map(Number)})}
+                data={pops.map(pop=>({value:String(pop.id),
+                    label:[pop.region,pop.city,pop.operator,pop.name].filter(Boolean).filter((item,i,all)=>all.indexOf(item)===i).join(' · ')||'PoP '+pop.id}))}/>}
+            {error&&<Alert color="red">{error}</Alert>}
+        </Stack>
+    </Card>
+}
+function DpiRegionFields({ action, onChange, dpiCostLimit }: {
+    action: DpiAction; onChange:(action:DpiAction)=>void;dpiCostLimit:number
+}) {
+    const branches=!!action.gate
+    const locations:DpiRegion[]=action.locations?.length?action.locations:[{location:action.location,pop_ids:action.pop_ids}]
+    const changeLocations=(next:DpiRegion[])=>{
+        const first=next[0]??{location:'russia'}
+        onChange({...action,location:first.location,pop_ids:first.pop_ids,locations:branches?next:undefined})
+    }
+    return <Stack gap="sm">
+        <Switch checked={branches}
+            label="Дождаться результата и выбрать действие по доступности"
+            description="При недоступности в N регионах запускается аварийная ветка; если доступно — другая. При ошибке ничего не переключается автоматически."
+            onChange={event=>{
+                const gate=event.currentTarget.checked?{minUnavailableRegions:2,timeoutMinutes:15}:undefined
+                const first=locations[0]
+                onChange({...action,gate,locations:gate?locations:undefined,location:first.location,pop_ids:first.pop_ids})
+            }}/>
+        {branches?<MultiSelect label="Страны и типы сетей" searchable clearable maxValues={5}
+            description="Платные проверки будут запущены по выбранным странам; порог учитывает уникальные регионы, а не количество запросов"
+            data={dpiCountries} value={locations.map(item=>item.location)}
+            onChange={values=>changeLocations(values.map(value=>locations.find(item=>item.location===value)??{location:value}))}/>:
+            <Select label="Страна и тип сети" searchable allowDeselect={false} value={action.location} data={dpiCountries}
+                onChange={value=>changeLocations([{location:value||'russia'}])}/>}
+        {locations.map((target,index)=><DpiPointPicker key={target.location} target={target}
+            onChange={value=>changeLocations(locations.map((item,i)=>i===index?value:item))}/>)}
+        {branches&&<SimpleGrid cols={{base:1,sm:2}}>
+            <NumberInput min={1} max={100} allowDecimal={false}
+                label="Недоступно минимум в N регионах" value={action.gate!.minUnavailableRegions}
+                onChange={value=>onChange({...action,gate:{...action.gate!,minUnavailableRegions:Number(value)}})}/>
+            <NumberInput min={3} max={45} allowDecimal={false}
+                label="Максимум ожидания, минут" value={action.gate!.timeoutMinutes}
+                onChange={value=>onChange({...action,gate:{...action.gate!,timeoutMinutes:Number(value)}})}/>
+        </SimpleGrid>}
+        <Text size="xs" c="dimmed">Лимит суммарной стоимости проверок: ${dpiCostLimit} USD. Неполные, ошибочные или просроченные результаты дают «Неопределённо» — автоматический failover не выполняется.</Text>
+    </Stack>
+}
+
 export function AutomationPreviewView({ preview }: { preview: AutomationPreview }) {
     return <Stack gap="md">
         <Card withBorder radius="md" p="md">
@@ -127,7 +208,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
     const move = (index: number, delta: number) => {
         const actions = [...draft.actions]; [actions[index], actions[index + delta]] = [actions[index + delta], actions[index]]; change({ actions })
     }
-    const requiresNode = ['online_drop', 'node_offline'].includes(draft.trigger_type) || draft.actions.some(action => ['rotate_ip', 'hide_hosts', 'show_hosts', 'dpi_check'].includes(action.type))
+    const requiresNode = ['online_drop', 'online_value', 'node_offline'].includes(draft.trigger_type) || draft.actions.some(action => ['rotate_ip', 'hide_hosts', 'show_hosts', 'dpi_check'].includes(action.type))
     const nodeHosts = hosts.filter(host => host.node_uuids.includes(draft.node_uuid ?? ''))
     const check = async () => {
         setChecking(true); setError(''); setPreview(null)
@@ -158,8 +239,12 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                 <Select label="Когда запускать" allowDeselect={false} value={draft.trigger_type} data={Object.entries(triggerLabels).map(([value, label]) => ({ value, label }))}
                     onChange={value => change({ trigger_type: value as AutomationInput['trigger_type'], cooldown_minutes: value === 'interval' ? Math.min(draft.cooldown_minutes, draft.interval_minutes) : draft.cooldown_minutes })} />
                 <Select label={requiresNode ? 'Нода' : 'Нода (если нужна для действий)'} required={requiresNode} clearable={!requiresNode} searchable
-                    placeholder="Выберите ноду" data={nodes.map(node => ({ value: node.uuid, label: node.name }))} value={draft.node_uuid}
+                    placeholder="Выберите ноду" data={nodes.map(node => ({ value: node.uuid, label: nodeOptionLabel(node) }))} value={draft.node_uuid}
                     onChange={value => change({ node_uuid: value, actions: draft.actions.map(action => 'hosts' in action ? { ...action, hosts: [] } : action) })} />
+                {draft.trigger_type === 'online_value' && <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                    <Select label="Сравнение" allowDeselect={false} value={draft.online_operator} data={[{value:'gt',label:'Больше (>)'},{value:'lt',label:'Меньше (<)'},{value:'eq',label:'Равно (=)'}]} onChange={value=>change({online_operator: (value ?? 'lt') as AutomationInput['online_operator']})}/>
+                    <NumberInput label="Количество пользователей онлайн" min={0} max={1000000} allowDecimal={false} value={draft.online_value} onChange={value=>change({online_value:Number(value)})}/>
+                </SimpleGrid>}
                 {draft.trigger_type === 'online_drop' && <>
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
                         <NumberInput label="Падение онлайна, %" min={1} max={100} allowDecimal={false} value={draft.drop_percent} onChange={value => change({ drop_percent: Number(value) })} />
@@ -167,7 +252,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                     </SimpleGrid>
                     <Text size="sm" c="dimmed">Сравниваем с исходным онлайном за 5–30 минут до текущего замера. Нужны минимум 3 исходных замера. Подтверждённое отключение ноды тоже запускает это условие.</Text>
                 </>}
-                {['online_drop', 'node_offline'].includes(draft.trigger_type) && <>
+                {['online_drop', 'online_value', 'node_offline'].includes(draft.trigger_type) && <>
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
                         <NumberInput label="Условие сохраняется, минут" min={1} max={1440} allowDecimal={false} value={draft.duration_minutes} onChange={value => change({ duration_minutes: Number(value) })} />
                         <NumberInput label="Пауза между запусками, минут" min={1} max={10080} allowDecimal={false} value={draft.cooldown_minutes} onChange={value => change({ cooldown_minutes: Number(value) })} />
@@ -182,7 +267,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                 {draft.trigger_type === 'manual' && <Text size="sm" c="dimmed">Сохраните последовательность действий и запускайте её одной кнопкой, когда это нужно.</Text>}
             </Stack>}
             {step === 1 && <Stack gap="md">
-                <div><Title order={4}>Что выполнить</Title><Text size="sm" c="dimmed" mt={4}>Действия выполняются сверху вниз. Порядок можно изменить стрелками.</Text></div>
+                <div><Title order={4}>Что выполнить</Title><Text size="sm" c="dimmed" mt={4}>Действия выполняются сверху вниз. После DPI можно задать отдельные ветки: недоступно, доступно или неопределённо. Без подтверждения недоступности IP/DNS не меняются.</Text></div>
                 {draft.actions.map((action, index) => <Card key={index} withBorder radius="md" p="md">
                     <Stack gap="md">
                         <Group justify="space-between" gap="xs" wrap="nowrap">
@@ -193,6 +278,17 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                                 <ActionIcon size={44} variant="subtle" color="red" aria-label={`Удалить действие ${index + 1}`} onClick={() => change({ actions: draft.actions.filter((_, position) => position !== index) })}><TbTrash size={17} /></ActionIcon>
                             </Group>
                         </Group>
+                        {draft.actions.slice(0,index).some(previous=>previous.type==='dpi_check'&&previous.gate) && action.type!=='dpi_check' && <Select
+                            label="Выполнить действие, когда" allowDeselect={false}
+                            value={action.when??'always'}
+                            data={[
+                                {value:'dpi_unavailable',label:'Недоступно в заданном числе регионов'},
+                                {value:'dpi_available',label:'Условие недоступности НЕ подтвердилось',disabled:['rotate_ip','cloudflare_dns','hide_hosts'].includes(action.type)},
+                                {value:'dpi_unknown',label:'Неопределённо или ошибка (без смены IP)',disabled:['rotate_ip','cloudflare_dns','hide_hosts'].includes(action.type)},
+                                {value:'always',label:'При любом результате (только безопасные действия)',disabled:['rotate_ip','cloudflare_dns','hide_hosts'].includes(action.type)},
+                            ]}
+                            onChange={value=>setAction(index,{...action,when:(value??'always') as AutomationAction['when']})}
+                        />}
                         {action.type === 'cloudflare_dns' && <DnsActionFields action={action} accounts={accounts} hasRotation={draft.actions.slice(0, index).some(item => item.type === 'rotate_ip')} onChange={value => setAction(index, value)} />}
                         {'hosts' in action && <>
                             <MultiSelect label="Хосты" placeholder={draft.node_uuid ? 'Выберите хосты' : 'Сначала выберите ноду на шаге «Условие»'} disabled={!draft.node_uuid}
@@ -200,12 +296,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                                 data={nodeHosts.map(host => ({ value: host.uuid, label: `${host.remark}${host.node_uuids.length > 1 ? ' · общий хост' : ''}`, disabled: action.type !== 'dpi_check' && host.node_uuids.length > 1 }))} />
                             {action.type !== 'dpi_check' && <Text size="xs" c="dimmed">Общие хосты нескольких нод исключены, чтобы не менять доступность других нод.</Text>}
                         </>}
-                        {action.type === 'dpi_check' && <>
-                            <Select label="Регион проверки" allowDeselect={false} value={action.location}
-                                data={[{ value: 'russia', label: 'Россия' }, { value: 'russia_mobile', label: 'Россия · мобильные сети' }, { value: 'china', label: 'Китай' }, { value: 'iran', label: 'Иран' }, { value: 'turkmenistan', label: 'Туркменистан' }]}
-                                onChange={value => setAction(index, { ...action, location: value || 'russia' })} />
-                            <Text size="sm" c="orange">Платная проверка. Лимит на действие: ${dpiCostLimit}. Результат проверки появится в DPI Checker.</Text>
-                        </>}
+                        {action.type === 'dpi_check' && <DpiRegionFields action={action} dpiCostLimit={dpiCostLimit} onChange={value => setAction(index, value)} />}
                         {action.type === 'rotate_ip' && <>
                             <Text size="sm">Будет выбран доступный запасной IP из пула ноды. Связанные хосты переключатся на него.</Text>
                             {!draft.node_uuid && <Alert color="orange">Выберите ноду на шаге «Условие».</Alert>}
@@ -219,7 +310,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                 <Group align="flex-end" grow>
                     <Select label="Добавить действие" placeholder="Выберите действие" value={addType} onChange={value => setAddType(value as AutomationAction['type'] | null)}
                         data={Object.entries(actionLabels).map(([value, label]) => ({ value, label, disabled: value === 'rotate_ip' && draft.actions.some(action => action.type === 'rotate_ip') }))} />
-                    <Button h={44} variant="light" leftSection={<TbPlus size={17} />} disabled={!addType || draft.actions.length >= 8} onClick={() => { if (addType) { change({ actions: [...draft.actions, emptyAction(addType)] }); setAddType(null) } }}>Добавить</Button>
+                    <Button h={44} variant="light" leftSection={<TbPlus size={17} />} disabled={!addType || draft.actions.length >= 8} onClick={() => { if (addType) { const next=emptyAction(addType); if (draft.actions.some(a=>a.type==='dpi_check'&&a.gate)) next.when=['rotate_ip','cloudflare_dns','hide_hosts'].includes(addType)?'dpi_unavailable':'dpi_available'; change({actions:[...draft.actions,next]});setAddType(null) } }}>Добавить</Button>
                 </Group>
             </Stack>}
             {step === 2 && <Stack gap="md">

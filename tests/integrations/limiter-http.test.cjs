@@ -26,7 +26,7 @@ const db = {
   $executeRaw: async (query, ...values) => { writes.push({ query, values }); return 1; },
 };
 const bridgeGuard = new LimiterBridgeGuard(secrets);
-const webhook = new LimiterWebhookController(new LimiterService(db, {}, secrets));
+const webhook = new LimiterWebhookController(new LimiterService(db, {}, secrets, {}, {enqueue:async()=>{}}));
 let lastRaw;
 
 class ProbeController {

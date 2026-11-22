@@ -16,7 +16,8 @@ const sourceRoot=existsSync('/app/src/modules/node-operations')?'/app/src/module
 function load(file,names){
  const text=readFileSync(resolve(sourceRoot,file),'utf8')
   .replace(/^import .*;\r?\n/gm,'').replace(/^@Injectable\(\)\r?\n/gm,'').replace(/^export /gm,'');
- const scope={Buffer,process,URL,isIP,...crypto,BadRequestException,NotFoundException,ServiceUnavailableException,module:{exports:{}}};
+ const scope={Buffer,process,URL,isIP,...crypto,BadRequestException,NotFoundException,ServiceUnavailableException,
+  Logger:class{warn(){} error(){} log(){}},module:{exports:{}}};
  runInNewContext(stripTypeScriptTypes(text,{mode:'transform'})+'\nmodule.exports={'+names.join(',')+'};',scope);
  return scope.module.exports;
 }
@@ -35,7 +36,8 @@ function fixture(config={}){
   call:async(method,path,body)=>{calls.push({method,path,body});return {success:true,action:body?.action};},
   applySettings:async values=>{calls.push({settings:values})}};
  const credentials={get:async()=>({})};
- const service=new LimiterService(db,credentials,secrets,control);
+ const outgoing={enqueue:async()=>{}};
+ const service=new LimiterService(db,credentials,secrets,control,outgoing);
  return {db,control,credentials,service,writes,calls};
 }
 function signed(service,payload,timestamp=String(Math.floor(Date.now()/1000))){

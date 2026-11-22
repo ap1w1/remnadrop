@@ -3,7 +3,7 @@ import type { editor } from 'monaco-editor'
 import { ConfigEditorActionsFeature } from '@features/dashboard/config-profiles/config-editor-actions'
 import { ConfigValidationFeature } from '@features/dashboard/config-profiles/config-validation'
 import { MonacoSetupFeature } from '@features/dashboard/config-profiles/monaco-setup'
-import { Box, Button, Card, Code, Group, Loader, Paper, Stack } from '@mantine/core'
+import { Alert, Box, Button, Card, Code, Group, Loader, Paper, Stack } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import Editor, { Monaco, useMonaco } from '@monaco-editor/react'
 import clsx from 'clsx'
@@ -20,6 +20,7 @@ import { preventBackScroll } from '@shared/utils/misc'
 
 import styles from './ConfigEditor.module.css'
 import { IProps } from './interfaces'
+import { VisualConfigEditor } from './visual-config-editor'
 
 export function ConfigEditorWidget(props: IProps) {
     const { t, i18n } = useTranslation()
@@ -30,6 +31,9 @@ export function ConfigEditorWidget(props: IProps) {
     const [result, setResult] = useState('')
     const [isConfigValid, setIsConfigValid] = useState(true)
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+    const [visualMode, setVisualMode] = useState(false)
+    const [visualValue, setVisualValue] = useState<Record<string, unknown> | null>(null)
+    const [visualError, setVisualError] = useState('')
     const [originalValue, setOriginalValue] = useState<string>(
         JSON.stringify(configProfile.config, null, 2) || ''
     )
@@ -123,14 +127,40 @@ export function ConfigEditorWidget(props: IProps) {
         }
     }, [blocker])
 
+    const openVisualMode = () => {
+        try {
+            const value: unknown = JSON.parse(editorRef.current?.getValue() ?? JSON.stringify(configProfile.config))
+            if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Ожидается объект JSON')
+            setVisualValue(value as Record<string, unknown>)
+            setVisualMode(true)
+            setVisualError('')
+        } catch {
+            setVisualError('Сначала исправьте синтаксис JSON. Визуальный режим доступен только для корректного JSON-объекта.')
+        }
+    }
+    const visualChange = (value: Record<string, unknown>) => {
+        setVisualValue(value)
+        editorRef.current?.setValue(JSON.stringify(value, null, 2))
+        checkForChanges()
+    }
+
     return (
         <Box className={clsx(styles.container, isFullscreen && fullscreenClasses.overlay)}>
+            <Group gap="xs" justify="flex-end">
+                <Button size="sm" variant={!visualMode ? 'filled' : 'light'} onClick={() => setVisualMode(false)}>JSON</Button>
+                <Button size="sm" variant={visualMode ? 'filled' : 'light'} onClick={openVisualMode}>Визуальный редактор</Button>
+            </Group>
+            {visualError && <Alert color="red" onClose={() => setVisualError('')} withCloseButton>{visualError}</Alert>}
+            {visualMode && visualValue && <Paper className={clsx(styles.editorWrapper, isFullscreen && fullscreenClasses.fill)} withBorder style={{overflow:'auto'}}>
+                <VisualConfigEditor config={visualValue} onChange={visualChange}/>
+            </Paper>}
             <Paper
                 className={clsx(styles.editorWrapper, isFullscreen && fullscreenClasses.fill)}
                 p={0}
                 pos="relative"
                 style={{
-                    direction: 'ltr'
+                    direction: 'ltr',
+                    display: visualMode ? 'none' : undefined
                 }}
                 withBorder
             >

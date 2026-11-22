@@ -25,11 +25,12 @@ export function BackupsPage(){
   const [opened,setOpened]=useState(false),[editing,setEditing]=useState<string|null>(null)
   const [form,setForm]=useState<Payload>(blank),[busy,setBusy]=useState(false)
   const [error,setError]=useState(''),[notice,setNotice]=useState('')
-  const refresh=useCallback(async()=>{const response=await instance.get('/api/backups');const data=response.data.response as {targets:Target[];runs:BackupRun[];agent:{lastSeen:string|null;lastError:string|null;online:boolean}};setTargets(data.targets);setRuns(data.runs);setAgent(data.agent)},[])
+  const [pendingTargets,setPendingTargets]=useState<Record<string,string>>({}),[starting,setStarting]=useState<string|null>(null)
+  const refresh=useCallback(async()=>{const response=await instance.get('/api/backups');const data=response.data.response as {targets:Target[];runs:BackupRun[];agent:{lastSeen:string|null;lastError:string|null;online:boolean}};setTargets(data.targets);setRuns(data.runs);setAgent(data.agent);setPendingTargets(previous=>Object.fromEntries(Object.entries(previous).filter(([id,queuedAt])=>!data.runs.some(run=>run.targetId===id&&new Date(run.startedAt).getTime()>=new Date(queuedAt).getTime()-2000))))},[])
   useEffect(()=>{void refresh().catch(e=>setError(errorMessage(e)));const timer=setInterval(()=>void refresh().catch(()=>{}),20000);return()=>clearInterval(timer)},[refresh])
   const begin=(target?:Target)=>{setEditing(target?.id??null);setForm(target?{name:target.name,provider:target.provider,remoteName:target.remoteName,remotePath:target.remotePath,intervalMinutes:target.intervalMinutes,retentionDays:target.retentionDays,maxBytes:Number(target.maxBytes),autoDelete:target.autoDelete,webhookEnabled:target.webhookEnabled,enabled:target.enabled}:{...blank});setError('');setOpened(true)}
   const save=async()=>{setError('');setBusy(true);try{if(editing)await instance.patch(`/api/backups/targets/${editing}`,form);else await instance.post('/api/backups/targets',form);setOpened(false);setNotice('Настройки хранилища сохранены. У каждого назначения собственное расписание.');await refresh()}catch(e){setError(errorMessage(e))}finally{setBusy(false)}}
-  const run=async(t:Target)=>{setError('');try{const r=await instance.post(`/api/backups/targets/${t.id}/run`);setNotice(r.data.response.note);await refresh()}catch(e){setError(errorMessage(e))}}
+  const run=async(t:Target)=>{setError('');setStarting(t.id);try{const r=await instance.post(`/api/backups/targets/${t.id}/run`);setPendingTargets(previous=>({...previous,[t.id]:new Date().toISOString()}));setNotice(`Копирование «${t.name}» поставлено в очередь. ${r.data.response.note}`);await refresh()}catch(e){setError(errorMessage(e))}finally{setStarting(null)}}
   const remove=async(t:Target)=>{
     if(!window.confirm('Удалить хранилище «'+t.name+'» из списка и остановить его расписание? Существующие файлы бэкапов останутся на диске или в облаке.'))return
     setError('')
@@ -51,6 +52,8 @@ export function BackupsPage(){
     <Alert color={agent.online?"teal":"yellow"} title={agent.online?"Агент резервного копирования работает":"Агент не подключён"}>{agent.online?`Последняя связь: ${when(agent.lastSeen)}`:`Чтобы включить расписание, установите агент один раз на VPS. Инструкция — в «Справочной статье». ${agent.lastError??""}`}</Alert>
     {!targets.length?<Card withBorder padding="xl" radius="md"><Stack align="center" gap="xs"><TbArchive size={44}/><Title order={4}>Хранилища пока не добавлены</Title><Text c="dimmed">Добавьте локальный диск или удалённый rclone-провайдер, затем задайте расписание.</Text><Button onClick={()=>begin()}>Создать хранилище</Button></Stack></Card>:<SimpleGrid cols={{base:1,sm:2,lg:3}} spacing="sm">{targets.map(t=>{
         const last=latest(t.id)
+         const pending=!!pendingTargets[t.id]
+         const running=last?.status==='running'
         const filled=percent(t.lastUsageBytes,t.maxBytes)
         return <Card key={t.id} withBorder padding="sm" radius="md">
           <Stack gap={8}>
@@ -59,7 +62,7 @@ export function BackupsPage(){
                 <Text fw={700} size="sm" truncate>{t.name}</Text>
                 <Text size="xs" c="dimmed" truncate>{providerLabel[t.provider]} · {t.provider==='local'?'Диск VPS':t.remoteName+':'+t.remotePath}</Text>
               </Stack>
-              <Badge size="xs" color={!t.enabled?'gray':statusColor(t.lastStatus)} variant="light">{!t.enabled?'Пауза':statusName(t.lastStatus)}</Badge>
+              <Badge size="xs" color={running||pending?'blue':!t.enabled?'gray':statusColor(t.lastStatus)} variant="light">{running?'Выполняется':pending?'В очереди':!t.enabled?'Пауза':statusName(t.lastStatus)}</Badge>
             </Group>
             <Text c="dimmed" size="xs">{intervalLabels.find(i=>i.value===String(t.intervalMinutes))?.label??'Каждые '+t.intervalMinutes+' мин'} · Хранить {t.retentionDays} дн</Text>
             <Group justify="space-between" gap="xs">
@@ -67,11 +70,12 @@ export function BackupsPage(){
               <Text size="xs" c="dimmed">{t.autoDelete?'Автоочистка':'Без автоочистки'}{t.webhookEnabled?' · Вебхук':''}</Text>
             </Group>
             <Progress value={filled} size="xs" color={filled>=90?'red':filled>=75?'yellow':'teal'} />
+             {(pending||running)&&<Alert color="blue" p="xs" title={running?'Создаётся резервная копия':'Ожидание запуска'}><Text size="xs">{running?'Агент выполняет копирование. Статус обновляется автоматически каждые 20 секунд.':'Задание принято. Агент проверяет очередь, обычно в течение минуты.'}</Text></Alert>}
             <Tooltip multiline label={last?.status==='failed'?last.error??'Ошибка': 'Следующий запуск: '+when(t.nextRunAt)}>
               <Text c="dimmed" size="xs" truncate>{last?'Последний: '+when(last.startedAt):'Резервные копии ещё не создавались'}</Text>
             </Tooltip>
             <Group justify="space-between" gap="xs" wrap="wrap">
-              <Button size="compact-xs" variant="light" leftSection={<TbPlayerPlay size={13}/>} onClick={()=>void run(t)}>Создать</Button>
+              <Button size="compact-xs" variant="light" loading={starting===t.id} disabled={pending||running||starting!==null} leftSection={<TbPlayerPlay size={13}/>} onClick={()=>void run(t)}>Создать</Button>
               <Group gap={4}>
                 <Tooltip label="Настроить"><Button size="compact-xs" variant="subtle" aria-label={'Настроить '+t.name} onClick={()=>begin(t)}><TbSettings size={16}/></Button></Tooltip>
                 <Button size="compact-xs" variant="subtle" onClick={()=>void toggle(t)}>{t.enabled?'Пауза':'Включить'}</Button>
