@@ -77,7 +77,7 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
   }
   async prepare(input:{hosts:string[];location:DpiLocation;pop_ids?:number[]}){
     await this.credentials.getKey();this.validateLocation(input.location);
-    if(!Array.isArray(input.hosts)||!input.hosts.length||input.hosts.length>20||input.hosts.some(x=>!uuidPattern.test(x)))throw new BadRequestException('Select 1–20 hosts');
+    if(!Array.isArray(input.hosts)||!input.hosts.length||input.hosts.length>100||input.hosts.some(x=>!uuidPattern.test(x)))throw new BadRequestException('Select 1–100 hosts');
     const selected=[...new Set(input.hosts)];
     const hosts=await this.db.hosts.findMany({where:{uuid:{in:selected},isDisabled:false},select:{uuid:true,configProfileInboundUuid:true}});
     if(hosts.length!==selected.length||hosts.some(h=>!h.configProfileInboundUuid))throw new BadRequestException('Some hosts are disabled, missing, or do not have an inbound');
