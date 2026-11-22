@@ -78,3 +78,12 @@ CREATE TABLE cf_dns_record_host_links (
   PRIMARY KEY(zone_id,record_id,host_uuid)
 );
 CREATE INDEX cf_dns_record_host_links_host_idx ON cf_dns_record_host_links(host_uuid);
+
+-- Optional secret configuration managed from Limiter tab.
+CREATE TABLE limiter_credentials (
+ id integer PRIMARY KEY DEFAULT 1 CHECK(id=1),
+ iv bytea NOT NULL,
+ tag bytea NOT NULL,
+ ciphertext bytea NOT NULL,
+ updated_at timestamptz NOT NULL DEFAULT now()
+);
