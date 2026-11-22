@@ -10,6 +10,7 @@ import { NodeIpController } from './node-ip.controller';
 import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
 import { LimiterService } from './limiter.service';
+import { LimiterCredentialsService } from './limiter-credentials.service';
 import { LimiterController } from './limiter.controller';
 import { CloudflareDnsService } from './cloudflare-dns.service';
 import { CloudflareDnsController, CloudflareDnsWebhookController } from './cloudflare-dns.controller';
@@ -19,7 +20,7 @@ import { LimiterWebhookController } from './limiter-webhook.controller';
 
 @Module({
   imports:[CqrsModule,UsersModule,SubscriptionTemplateModule],
-  providers:[DpiCheckerService,DpiCredentialsService,NodeIpService,CloudflareDnsService,AutomationsService,LimiterService,LimiterBridgeGuard],
+  providers:[DpiCheckerService,DpiCredentialsService,NodeIpService,CloudflareDnsService,AutomationsService,LimiterService,LimiterCredentialsService,LimiterBridgeGuard],
   controllers:[DpiCheckerController,NodeIpController,AutomationsController,LimiterController,CloudflareDnsController,CloudflareDnsWebhookController,DiskMetricsController,LimiterBridgeController,LimiterWebhookController],
 })
 export class NodeOperationsModule {}
