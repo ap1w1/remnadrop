@@ -1,11 +1,12 @@
-import { ActionIcon, Box, Group, SimpleGrid, Stack, Title } from '@mantine/core'
+import { ActionIcon, Badge, Box, Card, Group, Progress, SimpleGrid, Stack, Text, Title } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { notifications } from '@mantine/notifications'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TbCamera, TbInfoCircle } from 'react-icons/tb'
 
 import { useIsMobile } from '@shared/hooks'
+import { instance } from '@shared/api/axios'
 import { LoadingScreen } from '@shared/ui'
 import { DisclaimerOverlay } from '@shared/ui/disclaimer-overlay'
 import { MetricCardShared, MetricCardWithTrendShared } from '@shared/ui/metrics/metric-card'
@@ -45,6 +46,21 @@ export const HomePage = (props: IProps) => {
     const [copying, setCopying] = useState(false)
 
     const { systemInfo, bandwidthStats, remnawaveHealth } = props
+    const [disks,setDisks]=useState<Array<{path:string;totalBytes?:string;availableBytes?:string;percentUsed?:number;error?:string}>>([])
+    useEffect(()=>{
+        let active=true
+        const load=async()=>{
+            try{
+                const r=await instance.get('/api/remnadrop/disk-metrics')
+                if(active)setDisks(r.data.response.disks)
+            }catch{
+                if(active)setDisks([{path:'/',error:'Метрика диска недоступна'}])
+            }
+        }
+        void load()
+        const timer=window.setInterval(()=>void load(),60000)
+        return()=>{active=false;window.clearInterval(timer)}
+    },[])
 
     const copyRuntimeScreenshot = async () => {
         if (!runtimeRef.current || copying) return
@@ -140,6 +156,35 @@ export const HomePage = (props: IProps) => {
                                 />
                             </AnimatedCard>
                         ))}
+                    </SimpleGrid>
+                </div>
+
+                <div className={classes.section}>
+                    <Title className={classes.title} m="xs" ml={0} order={4}>
+                        Диски сервера панели
+                    </Title>
+                    <SimpleGrid cols={{base:1,sm:2,xl:4}} spacing="xs">
+                        {disks.map((disk,index)=>{
+                            const free=Number(disk.availableBytes??0),total=Number(disk.totalBytes??0)
+                            const gb=(bytes:number)=>(bytes/1073741824).toFixed(1)+' ГиБ'
+                            const percent=disk.percentUsed??0
+                            return <AnimatedCard index={index} key={disk.path}>
+                                <Card withBorder radius="md" p="md">
+                                    <Stack gap={8}>
+                                        <Group justify="space-between"><Text fw={600} size="sm">Диск {disk.path}</Text>
+                                            <Badge color={percent>=95?'red':percent>=85?'yellow':'teal'} variant="light">
+                                                {disk.error?'Нет данных':percent+'% занято'}
+                                            </Badge>
+                                        </Group>
+                                        {disk.error?<Text c="dimmed" size="sm">{disk.error}</Text>:<>
+                                            <Title order={3}>{gb(free)} свободно</Title>
+                                            <Text size="xs" c="dimmed">Всего {gb(total)}</Text>
+                                            <Progress value={percent} size="md" color={percent>=95?'red':percent>=85?'yellow':'teal'}/>
+                                        </>}
+                                    </Stack>
+                                </Card>
+                            </AnimatedCard>
+                        })}
                     </SimpleGrid>
                 </div>
 
