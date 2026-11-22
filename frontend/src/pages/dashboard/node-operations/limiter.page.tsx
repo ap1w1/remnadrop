@@ -1,6 +1,6 @@
 import { Alert, Badge, Button, Card, Group, MultiSelect, NumberInput, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Title, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useState } from 'react'
-import { TbAdjustments, TbRefresh, TbShieldCheck, TbShieldExclamation } from 'react-icons/tb'
+import { TbAdjustments, TbRefresh, TbShieldCheck } from 'react-icons/tb'
 import { instance } from '@shared/api/axios'
 import { Page } from '@shared/ui'
 import { nodeOptionLabel, type NodeOptionData } from '@shared/utils/misc/node-option-label'
