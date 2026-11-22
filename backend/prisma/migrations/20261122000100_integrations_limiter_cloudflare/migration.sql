@@ -67,3 +67,13 @@ CREATE TABLE cf_dns_webhook_receipts (
   event_id uuid PRIMARY KEY,
   received_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Explicit host-record bindings cover hosts configured with raw IP addresses.
+CREATE TABLE cf_dns_record_host_links (
+  zone_id text NOT NULL CHECK(zone_id ~ '^[0-9a-f]{32}$'),
+  record_id text NOT NULL CHECK(record_id ~ '^[0-9a-f]{32}$'),
+  host_uuid uuid NOT NULL REFERENCES hosts(uuid) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(zone_id,record_id,host_uuid)
+);
+CREATE INDEX cf_dns_record_host_links_host_idx ON cf_dns_record_host_links(host_uuid);
