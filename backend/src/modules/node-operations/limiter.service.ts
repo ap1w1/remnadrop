@@ -5,6 +5,7 @@ import { LimiterCredentialsService } from './limiter-credentials.service';
 import { LimiterBridgeSecretsService } from './limiter-bridge-secrets.service';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { LimiterControlService, type LimiterUserState } from './limiter-control.service';
+import { LimiterOutboundWebhookService } from './limiter-outbound-webhook.service';
 
 export type LimiterSettings = {
  enabled:boolean;mode:'manual'|'auto';checkIntervalSeconds:number;activeWindowSeconds:number;
@@ -122,7 +123,8 @@ type EventRow={id:string;user_uuid:string|null;user_id:string|null;username:stri
 export class LimiterService {
  private lifecycle:Promise<void>=Promise.resolve();
  constructor(private readonly db:PrismaService,private readonly credentials:LimiterCredentialsService,
-  private readonly secrets:LimiterBridgeSecretsService,private readonly control:LimiterControlService){}
+  private readonly secrets:LimiterBridgeSecretsService,private readonly control:LimiterControlService,
+  private readonly outgoing:LimiterOutboundWebhookService){}
  private async serialized<T>(operation:()=>Promise<T>):Promise<T>{
    const previous=this.lifecycle;let release:()=>void=()=>{};
    this.lifecycle=new Promise<void>(resolve=>{release=resolve});
@@ -239,7 +241,8 @@ export class LimiterService {
    const result=await this.control.call<Record<string,unknown>>('POST','/actions',{userId:id,action,minutes,requestId});
    // The signed webhook also records bot/automatic actions. Request IDs deduplicate both paths.
    let warning:string|undefined;
-   try{await this.audit({userId:id,userUuid,username:user.username,action,minutes,source:'panel',success:true,requestId,message:''});}
+   try{await this.audit({userId:id,userUuid,username:user.username,action,minutes,source:'panel',success:true,requestId,message:''});
+       await this.outgoing.enqueue('action:'+requestId,'action',{user:{uuid:userUuid,id,username:user.username},action,minutes,source:'panel',success:true});}
    catch{warning='Действие выполнено. Журнал временно недоступен; обновите данные перед повторным действием.';}
    if(action==='ignore'||action==='unignore'){
      try{await this.syncPermanentIgnore(userUuid,action==='ignore');}
@@ -314,6 +317,7 @@ export class LimiterService {
      const {lastScanAt,lastError,engineVersion,...current}=(await this.settings()).response;
      const settings=fromOverrides(current,overrides);
      await this.db.$executeRaw`UPDATE limiter_settings SET config=config||${JSON.stringify(mirroredSettings(settings))}::jsonb,updated_at=now() WHERE id=1`;
+     await this.outgoing.enqueue(createHash('sha256').update(timestamp+'.').update(raw).digest('hex'),event,{event,occurredAt:new Date(Number(timestamp)*1000).toISOString()});
      return {response:{accepted:true}};
    }
    const puser=object(payload.user),userId=Number(puser.user_id),hasUser=!['daily_report','update_available'].includes(event);
@@ -332,6 +336,8 @@ export class LimiterService {
      await this.audit({userId,userUuid:user?.uuid??null,username,action,minutes,source,success:data.success,
        requestId,message:typeof data.message==='string'?data.message:''});
      if(user&&data.success&&(action==='ignore'||action==='unignore'))await this.syncPermanentIgnore(user.uuid,action==='ignore');
+     await this.outgoing.enqueue('action:'+requestId,event,{user:{uuid:user?.uuid??null,id:userId,username},
+       action,source,minutes,success:data.success,message:typeof data.message==='string'?data.message.slice(0,350):''});
      return {response:{accepted:true}};
    }
    const v=object(payload.violation),ips=Array.isArray(v.ips)?v.ips.slice(0,1000):[];
@@ -347,6 +353,10 @@ export class LimiterService {
        ${payload.action_mode==='auto'?'auto':'manual'},${boundedInt(v.device_limit)},${boundedInt(v.device_group_count??v.ip_count)},
        ${JSON.stringify(ips)}::jsonb,NULL,${hash},${JSON.stringify(payload)}::jsonb,${unique},${connection},${violations},${occurred})
      ON CONFLICT(webhook_sha256) DO NOTHING`;
+   await this.outgoing.enqueue(hash,event,{user:{uuid:user?.uuid??null,id:hasUser?userId:null,username},
+     violation:{deviceLimit:boundedInt(v.device_limit),observedCount:boundedInt(v.device_group_count??v.ip_count),
+       uniqueIpCount:unique,connectionCount:connection,violations24h:violations,
+       ips:ips.slice(0,100)},occurredAt:occurred.toISOString(),mode:payload.action_mode==='auto'?'auto':'manual'});
    return {response:{accepted:true}};
  }
 }
