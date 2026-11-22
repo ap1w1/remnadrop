@@ -28,11 +28,12 @@ export function LimiterPage(){
  const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState('')
  const [ignoredIpsText,setIgnoredIpsText]=useState('')
  const [credentialStatus,setCredentialStatus]=useState(false)
+ const [engineStatus,setEngineStatus]=useState<{embedded:boolean;running:boolean;pid:number|null;version:string;redisDatabase:number}|null>(null)
  const [telegramToken,setTelegramToken]=useState(''),[telegramChat,setTelegramChat]=useState(''),[telegramAdmins,setTelegramAdmins]=useState('')
  const [maxmindKey,setMaxmindKey]=useState(''),[hwidSquadIds,setHwidSquadIds]=useState('')
  const refresh=useCallback(async()=>{
-   const [a,b,c]=await Promise.all([instance.get(api+'/settings'),instance.get(api+'/events'),instance.get(api+'/credentials')])
-   const s=a.data.response as Settings;setSettings(s);setIgnoredIpsText(s.ignoredIps.join(', '));setEvents(b.data.response as Event[]);setCredentialStatus(Boolean(c.data.response.configured))
+   const [a,b,c,d]=await Promise.all([instance.get(api+'/settings'),instance.get(api+'/events'),instance.get(api+'/credentials'),instance.get(api+'/status')])
+   const s=a.data.response as Settings;setSettings(s);setIgnoredIpsText(s.ignoredIps.join(', '));setEvents(b.data.response as Event[]);setCredentialStatus(Boolean(c.data.response.configured));setEngineStatus(d.data.response)
  },[])
  useEffect(()=>{void Promise.all([refresh(),instance.get('/api/nodes').then(r=>setNodes(r.data.response))])
    .catch(e=>setError(errMessage(e))).finally(()=>setLoading(false))},[refresh])
@@ -85,9 +86,13 @@ export function LimiterPage(){
    {settings.lastError&&<Alert color="yellow" title="Состояние подключения Limiter">{settings.lastError}</Alert>}
    {settings.enabled&&(!settings.lastScanAt||Date.now()-new Date(settings.lastScanAt).getTime()>120000)&&
      <Alert color="orange" title="Сервис не подтверждён">Limiter разрешён, но встроенный процесс не запущен. Проверьте Telegram-настройки, Redis и журнал панели.</Alert>}
-   <SimpleGrid cols={{base:1,sm:3}} spacing="xs">
+   <SimpleGrid cols={{base:1,sm:4}} spacing="xs">
      <Card withBorder p="sm"><Text c="dimmed" size="xs">Состояние</Text><Badge mt={6} color={settings.enabled?'teal':'gray'}>{settings.enabled?'Разрешён':'Выключен'}</Badge></Card>
      <Card withBorder p="sm"><Text c="dimmed" size="xs">Режим</Text><Title order={4}>{settings.mode==='auto'?'Автоматический':'Ручной'}</Title></Card>
+     <Card withBorder p="sm"><Text c="dimmed" size="xs">Процесс в контейнере remnawave</Text>
+       <Badge mt={6} color={engineStatus?.running?'teal':'gray'} variant="light">{engineStatus?.running?'Работает':'Не запущен'}</Badge>
+       <Text size="xs" c="dimmed" mt={3}>{engineStatus?.version??'5.1.0'} · Valkey DB {engineStatus?.redisDatabase??8}</Text>
+     </Card>
      <Card withBorder p="sm"><Text c="dimmed" size="xs">Последняя связь с сервисом</Text><Text size="sm" mt={5}>{settings.lastScanAt?new Date(settings.lastScanAt).toLocaleString('ru-RU'):'Не запускался'}</Text></Card>
    </SimpleGrid>
    <Card withBorder radius="md" padding="md"><Stack gap="md">
