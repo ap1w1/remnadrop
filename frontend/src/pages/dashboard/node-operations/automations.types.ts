@@ -8,7 +8,8 @@ export type AutomationAction =
 
 export type AutomationInput = {
     name: string; node_uuid: string | null; enabled: boolean;
-    trigger_type: 'online_drop' | 'node_offline' | 'interval' | 'manual';
+    trigger_type: 'online_drop' | 'online_value' | 'node_offline' | 'interval' | 'manual';
+    online_operator: 'gt' | 'lt' | 'eq'; online_value: number;
     drop_percent: number; min_online: number; duration_minutes: number;
     cooldown_minutes: number; interval_minutes: number; failure_policy: 'stop' | 'continue';
     actions: AutomationAction[]
@@ -45,19 +46,20 @@ export const actionLabels: Record<AutomationAction['type'], string> = {
     hide_hosts: 'Скрыть хосты', show_hosts: 'Показать хосты', webhook: 'Отправить вебхук'
 }
 export const triggerLabels: Record<AutomationInput['trigger_type'], string> = {
-    online_drop: 'Падение онлайна', node_offline: 'Нода недоступна', interval: 'По интервалу', manual: 'Вручную'
+    online_drop: 'Падение онлайна', online_value: 'Онлайн: больше, меньше или равен', node_offline: 'Нода недоступна', interval: 'По интервалу', manual: 'Вручную'
 }
 export const executionStatuses: Record<string, { label: string; color: string }> = {
     running: { label: 'Выполняется', color: 'blue' }, completed: { label: 'Успешно', color: 'teal' },
     partial_failure: { label: 'Частично выполнено', color: 'orange' }, failed: { label: 'Ошибка', color: 'red' }
 }
 export const freshAutomation = (): AutomationInput => ({
-    name: '', node_uuid: null, enabled: false, trigger_type: 'online_drop', drop_percent: 50,
+    name: '', node_uuid: null, enabled: false, trigger_type: 'online_drop', online_operator: 'lt', online_value: 10, drop_percent: 50,
     min_online: 5, duration_minutes: 5, cooldown_minutes: 60, interval_minutes: 60,
     failure_policy: 'stop', actions: []
 })
 export function triggerSummary(rule: AutomationInput) {
     if (rule.trigger_type === 'manual') return 'По нажатию «Запустить»'
+    if (rule.trigger_type === 'online_value') return `Онлайн ${rule.online_operator === 'gt' ? '>' : rule.online_operator === 'eq' ? '=' : '<'} ${rule.online_value}`
     if (rule.trigger_type === 'interval') return `Каждые ${rule.interval_minutes} мин`
     if (rule.trigger_type === 'node_offline') return `Недоступна ${rule.duration_minutes} мин`
     return `Онлайн упал на ${rule.drop_percent}% за ${rule.duration_minutes} мин`
