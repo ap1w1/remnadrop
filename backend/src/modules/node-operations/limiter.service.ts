@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@common/database/prisma.service';
 import { isIP } from 'node:net';
 import { LimiterCredentialsService } from './limiter-credentials.service';
+import { LimiterBridgeSecretsService } from './limiter-bridge-secrets.service';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 export type LimiterSettings = {
@@ -65,7 +66,7 @@ function normalizeSettings(input:unknown):LimiterSettings{
 
 @Injectable()
 export class LimiterService {
- constructor(private readonly db:PrismaService,private readonly credentials:LimiterCredentialsService){}
+ constructor(private readonly db:PrismaService,private readonly credentials:LimiterCredentialsService,private readonly secrets:LimiterBridgeSecretsService){}
  async settings(){
    const rows=await this.db.$queryRaw<Array<{config:Partial<LimiterSettings>;last_scan_at:Date|null;last_error:string|null}>>`
      SELECT config,last_scan_at,last_error FROM limiter_settings WHERE id=1`;
@@ -130,8 +131,7 @@ export class LimiterService {
    return {response:{accepted:true}};
  }
  async recordWebhook(raw:Buffer,signature:string,timestamp:string){
-   const secret=process.env.REMNADROP_LIMITER_WEBHOOK_SECRET;
-   if(!secret||secret.length<32)throw new BadRequestException('Webhook disabled');
+   const secret=this.secrets.webhookSecret;
    const age=Math.abs(Date.now()-Number(timestamp)*1000);
    if(!/^\d{10}$/.test(timestamp)||!Number.isFinite(age)||age>300000)throw new BadRequestException('Invalid webhook timestamp');
    const expected=createHmac('sha256',secret).update(timestamp+'.').update(raw).digest('hex');
