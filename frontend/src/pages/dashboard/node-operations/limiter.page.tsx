@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Card, Group, MultiSelect, NumberInput, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Title, Tooltip } from '@mantine/core'
+import { Alert, Badge, Button, Card, Group, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Title, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useState } from 'react'
 import { TbAdjustments, TbRefresh, TbShieldCheck } from 'react-icons/tb'
 import { instance } from '@shared/api/axios'
@@ -27,9 +27,12 @@ export function LimiterPage(){
  const [settings,setSettings]=useState<Settings>(defaultConfig),[events,setEvents]=useState<Event[]>([]),[nodes,setNodes]=useState<NodeOptionData[]>([])
  const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState('')
  const [ignoredIpsText,setIgnoredIpsText]=useState('')
+ const [credentialStatus,setCredentialStatus]=useState(false)
+ const [telegramToken,setTelegramToken]=useState(''),[telegramChat,setTelegramChat]=useState(''),[telegramAdmins,setTelegramAdmins]=useState('')
+ const [maxmindKey,setMaxmindKey]=useState(''),[hwidSquadIds,setHwidSquadIds]=useState('')
  const refresh=useCallback(async()=>{
-   const [a,b]=await Promise.all([instance.get(api+'/settings'),instance.get(api+'/events')])
-   const s=a.data.response as Settings;setSettings(s);setIgnoredIpsText(s.ignoredIps.join(', '));setEvents(b.data.response as Event[])
+   const [a,b,c]=await Promise.all([instance.get(api+'/settings'),instance.get(api+'/events'),instance.get(api+'/credentials')])
+   const s=a.data.response as Settings;setSettings(s);setIgnoredIpsText(s.ignoredIps.join(', '));setEvents(b.data.response as Event[]);setCredentialStatus(Boolean(c.data.response.configured))
  },[])
  useEffect(()=>{void Promise.all([refresh(),instance.get('/api/nodes').then(r=>setNodes(r.data.response))])
    .catch(e=>setError(errMessage(e))).finally(()=>setLoading(false))},[refresh])
@@ -43,6 +46,24 @@ export function LimiterPage(){
      await instance.put(api+'/settings',{...config,ignoredIps:ignoredIpsText.split(/[,\s]+/).filter(Boolean)})
      await refresh();setNotice('Настройки сохранены. Сервис Limiter 5.1.0 применит их при следующей синхронизации.')
    }catch(e){setError(errMessage(e))}finally{setBusy(false)}
+ }
+ const saveCredentials=async()=>{
+   setBusy(true);setError('')
+   try{
+     await instance.put(api+'/credentials',{
+       telegramBotToken:telegramToken,telegramChatId:telegramChat,telegramAdminIds:telegramAdmins,
+       maxmindLicenseKey:maxmindKey,
+       sharedHwidSquadUuids:hwidSquadIds.split(/[\s,]+/).filter(Boolean)
+     })
+     setCredentialStatus(true);setTelegramToken('');setTelegramChat('');setTelegramAdmins('')
+     setMaxmindKey('');setHwidSquadIds('')
+     setNotice('Секретные настройки сохранены в зашифрованном виде. Сервис применит их при синхронизации.')
+   }catch(e){setError(errMessage(e))}finally{setBusy(false)}
+ }
+ const removeCredentials=async()=>{
+   if(!window.confirm('Удалить сохранённые токены и настройки Telegram/MaxMind?'))return
+   setBusy(true)
+   try{await instance.delete(api+'/credentials');setCredentialStatus(false);setNotice('Секретные настройки удалены.')}catch(e){setError(errMessage(e))}finally{setBusy(false)}
  }
  const ignored=async(uuid:string)=>{
    if(!window.confirm('Добавить пользователя в исключения Limiter?'))return
@@ -69,6 +90,29 @@ export function LimiterPage(){
      <Card withBorder p="sm"><Text c="dimmed" size="xs">Режим</Text><Title order={4}>{settings.mode==='auto'?'Автоматический':'Ручной'}</Title></Card>
      <Card withBorder p="sm"><Text c="dimmed" size="xs">Последняя связь с сервисом</Text><Text size="sm" mt={5}>{settings.lastScanAt?new Date(settings.lastScanAt).toLocaleString('ru-RU'):'Не запускался'}</Text></Card>
    </SimpleGrid>
+   <Card withBorder radius="md" padding="md"><Stack gap="md">
+     <Group justify="space-between"><Title order={4}>Интеграции Limiter 5.1.0</Title>
+       <Badge color={credentialStatus?'teal':'gray'} variant="light">{credentialStatus?'Секреты сохранены':'Не настроено'}</Badge></Group>
+     <Text size="sm" c="dimmed">Telegram обязателен для исходного Limiter 5.1.0. Эти данные хранятся в PostgreSQL с AES-256-GCM и передаются только сервису через внутренний API.</Text>
+     <SimpleGrid cols={{base:1,sm:2}}>
+       <PasswordInput label="Telegram Bot Token" description="Токен от BotFather"
+         placeholder={credentialStatus?'Введите новый токен для замены':'123456:...'}
+         autoComplete="off" value={telegramToken} onChange={e=>setTelegramToken(e.currentTarget.value)}/>
+       <TextInput label="Chat ID" placeholder="-1001234567890" value={telegramChat} onChange={e=>setTelegramChat(e.currentTarget.value)}/>
+       <TextInput label="Admin IDs" description="Telegram ID через запятую" placeholder="123456789,987654321"
+         value={telegramAdmins} onChange={e=>setTelegramAdmins(e.currentTarget.value)}/>
+       <PasswordInput label="MaxMind License Key (необязательно)" placeholder="Лицензионный ключ MaxMind для ASN"
+         autoComplete="off" value={maxmindKey} onChange={e=>setMaxmindKey(e.currentTarget.value)}/>
+     </SimpleGrid>
+     <TextInput label="UUID сквадов для анализа повторных триалов" placeholder="uuid, uuid, ..."
+       description="Пусто — все пользователи. Задаётся только если включён мониторинг общего HWID."
+       value={hwidSquadIds} onChange={e=>setHwidSquadIds(e.currentTarget.value)}/>
+     <Group justify="end">
+       {credentialStatus&&<Button variant="subtle" color="red" onClick={()=>void removeCredentials()} disabled={busy}>Удалить секреты</Button>}
+       <Button loading={busy} disabled={!telegramToken||!telegramChat||!telegramAdmins}
+         onClick={()=>void saveCredentials()}>Сохранить Telegram / MaxMind</Button>
+     </Group>
+   </Stack></Card>
    <Card withBorder radius="md" padding="md"><Stack gap="md">
      <Group justify="space-between"><Group gap="xs"><TbAdjustments size={21}/><Title order={4}>Настройки проверки</Title></Group>
        <Switch label={settings.enabled?'Включить Limiter 5.1.0':'Limiter выключен'} checked={settings.enabled} onChange={e=>change('enabled',e.currentTarget.checked)}/></Group>
