@@ -194,8 +194,8 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     const results=Array.isArray(snapshot.results)?snapshot.results:[];
     const summary=JSON.stringify(snapshot);
     // Avoid unbounded DB growth and malicious response amplification.
-    const safeSnapshot=summary.length<=8*1024*1024 ? snapshot : {status,progress:response.progress??null,error:'Provider response exceeded 8 MiB; detailed JSON truncated',results:results.slice(0,500)};
-    await this.db.$executeRaw`UPDATE dpi_check_jobs SET status=${status},progress_done=${done},progress_total=${total},actual_cost=${response.usd_cost??null},results=${JSON.stringify(results)}::jsonb,remote_response=${JSON.stringify(safeSnapshot)}::jsonb,error=${response.error??null},updated_at=now() WHERE id=${id}::uuid`;
+    const safeSnapshot=summary.length<=8*1024*1024 ? snapshot : {status,progress:snapshot.progress??null,error:'Provider response exceeded 8 MiB; detailed JSON truncated',results:results.slice(0,500)};
+    await this.db.$executeRaw`UPDATE dpi_check_jobs SET status=${status},progress_done=${done},progress_total=${total},actual_cost=${response.usd_cost??null},results=${JSON.stringify(results)}::jsonb,remote_response=${JSON.stringify(safeSnapshot)}::jsonb,error=${typeof snapshot.error==='string'?snapshot.error:null},updated_at=now() WHERE id=${id}::uuid`;
     return status;
   }
   async cancel(id:string){const job=await this.job(id);if(job.status==='prepared'){await this.db.$executeRaw`UPDATE dpi_check_jobs SET status='cancelled' WHERE id=${id}::uuid`;await this.cleanup(job);return {response:{success:true}};}
