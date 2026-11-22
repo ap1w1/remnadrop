@@ -6,6 +6,7 @@ import { RolesGuard } from '@common/guards/roles';
 import { ScopesGuard } from '@common/guards/scopes';
 import { ROLE } from '@libs/contracts/constants';
 import { LimiterService } from './limiter.service';
+import { LimiterRunnerService } from './limiter-runner.service';
 import { LimiterCredentialsService } from './limiter-credentials.service';
 
 @Controller('limiter')
@@ -13,8 +14,9 @@ import { LimiterCredentialsService } from './limiter-credentials.service';
 @ApiScopeResource('users')
 @UseGuards(JwtDefaultGuard,RolesGuard,ScopesGuard)
 export class LimiterController {
- constructor(private readonly limiter:LimiterService,private readonly credentials:LimiterCredentialsService){}
+ constructor(private readonly limiter:LimiterService,private readonly credentials:LimiterCredentialsService,private readonly runner:LimiterRunnerService){}
  @Get('settings') settings(){return this.limiter.settings();}
+ @Get('status') status(){return this.runner.status();}
  @Put('settings') update(@Body() input:unknown){return this.limiter.update(input);}
  @Get('events') events(){return this.limiter.events();}
  @Get('credentials') credentialsStatus(){return this.credentials.status();}
