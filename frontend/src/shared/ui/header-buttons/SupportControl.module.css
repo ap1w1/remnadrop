@@ -23,3 +23,7 @@
         height: rem(22);
     }
 }
+
+@media (min-width: 75em) {
+    .support { width: auto; min-width: 44px; padding: 0 12px; gap: 8px; }
+}
