@@ -53,7 +53,7 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
  }}
  onModuleDestroy(){if(this.timer)clearInterval(this.timer);}
  async settings(){
-   const rows=await this.db.$queryRaw<{config:Partial<Settings>;last_scan_at:Date|null;last_error:string|null}[]>\`SELECT config,last_scan_at,last_error FROM limiter_settings WHERE id=1\`;
+   const rows=await this.db.$queryRaw<{config:Partial<Settings>;last_scan_at:Date|null;last_error:string|null}[]>`SELECT config,last_scan_at,last_error FROM limiter_settings WHERE id=1`;
    return {response:{...normalizeSettings(rows[0]?.config??{}),lastScanAt:rows[0]?.last_scan_at??null,lastError:rows[0]?.last_error??null}};
  }
  async update(input:unknown){
@@ -62,11 +62,11 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
    const {lastScanAt,lastError,...saved}=current;
    const incoming=input as Partial<Settings>;
    const config=normalizeSettings({...saved,...incoming});
-   await this.db.$executeRaw\`UPDATE limiter_settings SET config=\${JSON.stringify(config)}::jsonb,updated_at=now(),last_error=NULL WHERE id=1\`;
+   await this.db.$executeRaw`UPDATE limiter_settings SET config=${JSON.stringify(config)}::jsonb,updated_at=now(),last_error=NULL WHERE id=1`;
    return this.settings();
  }
  async events(){
-   const rows=await this.db.$queryRaw\`SELECT id,user_uuid,username,event_type,mode,device_limit,observed_count,ips,details,created_at FROM limiter_events ORDER BY created_at DESC LIMIT 250\`;
+   const rows=await this.db.$queryRaw`SELECT id,user_uuid,username,event_type,mode,device_limit,observed_count,ips,details,created_at FROM limiter_events ORDER BY created_at DESC LIMIT 250`;
    return {response:rows};
  }
  async ignore(uuidValue:string){
@@ -98,7 +98,7 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
    return ip.split('.').slice(0,3).join('.')+'.0/24';
  }
  private async restoreDue(){
-   const rows=await this.db.$queryRaw<{user_uuid:string}[]>\`SELECT user_uuid FROM limiter_restores WHERE restore_at<=now() ORDER BY restore_at LIMIT 30\`;
+   const rows=await this.db.$queryRaw<{user_uuid:string}[]>`SELECT user_uuid FROM limiter_restores WHERE restore_at<=now() ORDER BY restore_at LIMIT 30`;
    for(const row of rows){
      try{
        const current=await this.db.users.findUnique({where:{uuid:row.user_uuid},select:{status:true}});
@@ -106,9 +106,9 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
          const result=await this.users.enableUser(row.user_uuid);
          if(!result.isOk)throw new Error('User enable failed');
        }
-       await this.db.$executeRaw\`DELETE FROM limiter_restores WHERE user_uuid=\${row.user_uuid}::uuid\`;
-       await this.db.$executeRaw\`INSERT INTO limiter_events(user_uuid,username,event_type,mode,device_limit,observed_count,details)
-         SELECT uuid,username,'restored','auto',0,0,'Scheduled restore completed' FROM users WHERE uuid=\${row.user_uuid}::uuid\`;
+       await this.db.$executeRaw`DELETE FROM limiter_restores WHERE user_uuid=${row.user_uuid}::uuid`;
+       await this.db.$executeRaw`INSERT INTO limiter_events(user_uuid,username,event_type,mode,device_limit,observed_count,details)
+         SELECT uuid,username,'restored','auto',0,0,'Scheduled restore completed' FROM users WHERE uuid=${row.user_uuid}::uuid`;
      }catch(error){this.logger.warn('Limiter restore failed: '+String(error))}
    }
  }
@@ -128,7 +128,7 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
      const state=(await this.settings()).response;
      if(!state.enabled)return;
      if(state.lastScanAt&&Date.now()-new Date(state.lastScanAt).getTime()<state.checkIntervalSeconds*1000)return;
-     await this.db.$executeRaw\`UPDATE limiter_settings SET last_scan_at=now(),last_error=NULL WHERE id=1\`;
+     await this.db.$executeRaw`UPDATE limiter_settings SET last_scan_at=now(),last_error=NULL WHERE id=1`;
      const nodes=await this.db.nodes.findMany({where:{isConnected:true,isDisabled:false},select:{uuid:true}});
      const selected=nodes.filter(n=>!state.ignoredNodes.includes(n.uuid)).slice(0,200);
      if(!selected.length)return;
@@ -154,7 +154,7 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
        }
      }
      if(succeeded!==selected.length){
-       await this.db.$executeRaw\`UPDATE limiter_settings SET last_error=\${'Only '+succeeded+'/'+selected.length+' nodes responded. Enforcement skipped.'} WHERE id=1\`;
+       await this.db.$executeRaw`UPDATE limiter_settings SET last_error=${'Only '+succeeded+'/'+selected.length+' nodes responded. Enforcement skipped.'} WHERE id=1`;
        return;
      }
      const users=await this.db.users.findMany({where:{tId:{in:[...entries.keys()].map(BigInt)}},select:{tId:true,uuid:true,username:true,status:true,hwidDeviceLimit:true}});
@@ -166,18 +166,18 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
        if(groups.size<=limit+state.tolerance)continue;
        try{
          const count=groups.size;
-         const counter=await this.db.$queryRaw<{count:number;last_action_at:Date|null}[]>\`
+         const counter=await this.db.$queryRaw<{count:number;last_action_at:Date|null}[]>`
            INSERT INTO limiter_user_counters(user_uuid,count,window_start,last_detected_at)
-           VALUES (\${user.uuid}::uuid,1,now(),now())
+           VALUES (${user.uuid}::uuid,1,now(),now())
            ON CONFLICT(user_uuid) DO UPDATE SET
-             count=CASE WHEN limiter_user_counters.window_start < now()-\${state.thresholdWindowSeconds}::int*interval '1 second' THEN 1 ELSE limiter_user_counters.count+1 END,
-             window_start=CASE WHEN limiter_user_counters.window_start < now()-\${state.thresholdWindowSeconds}::int*interval '1 second' THEN now() ELSE limiter_user_counters.window_start END,
+             count=CASE WHEN limiter_user_counters.window_start < now()-${state.thresholdWindowSeconds}::int*interval '1 second' THEN 1 ELSE limiter_user_counters.count+1 END,
+             window_start=CASE WHEN limiter_user_counters.window_start < now()-${state.thresholdWindowSeconds}::int*interval '1 second' THEN now() ELSE limiter_user_counters.window_start END,
              last_detected_at=now()
-           RETURNING count,last_action_at\`;
+           RETURNING count,last_action_at`;
          const previous=counter[0];
          if(previous.count<state.violationThreshold)continue;
          if(previous.last_action_at&&Date.now()-previous.last_action_at.getTime()<state.cooldownSeconds*1000)continue;
-         await this.db.$executeRaw\`UPDATE limiter_user_counters SET count=0,last_action_at=now() WHERE user_uuid=\${user.uuid}::uuid\`;
+         await this.db.$executeRaw`UPDATE limiter_user_counters SET count=0,last_action_at=now() WHERE user_uuid=${user.uuid}::uuid`;
          let eventType='violation';
          let detail='Detected excessive simultaneous connections';
          if(state.mode==='auto'){
@@ -185,18 +185,18 @@ export class LimiterService implements OnModuleInit,OnModuleDestroy {
            if(!disabled.isOk)throw new Error('Unable to disable user');
            eventType='disabled';detail='Subscription disabled automatically';
            if(state.autoRestoreMinutes>0){
-             await this.db.$executeRaw\`INSERT INTO limiter_restores(user_uuid,restore_at) VALUES(\${user.uuid}::uuid,now()+\${state.autoRestoreMinutes}::int*interval '1 minute')
-               ON CONFLICT(user_uuid) DO UPDATE SET restore_at=EXCLUDED.restore_at\`;
+             await this.db.$executeRaw`INSERT INTO limiter_restores(user_uuid,restore_at) VALUES(${user.uuid}::uuid,now()+${state.autoRestoreMinutes}::int*interval '1 minute')
+               ON CONFLICT(user_uuid) DO UPDATE SET restore_at=EXCLUDED.restore_at`;
            }
          }
-         await this.db.$executeRaw\`INSERT INTO limiter_events(user_uuid,username,event_type,mode,device_limit,observed_count,ips,details)
-           VALUES(\${user.uuid}::uuid,\${user.username},\${eventType},\${state.mode},\${limit},\${count},\${JSON.stringify(ips)}::jsonb,\${detail})\`;
+         await this.db.$executeRaw`INSERT INTO limiter_events(user_uuid,username,event_type,mode,device_limit,observed_count,ips,details)
+           VALUES(${user.uuid}::uuid,${user.username},${eventType},${state.mode},${limit},${count},${JSON.stringify(ips)}::jsonb,${detail})`;
          await this.alert({userUuid:user.uuid,username:user.username,count,limit,mode:state.mode});
        }catch(error){this.logger.warn('Limiter user action failed: '+String(error));}
      }
    }catch(error){
      this.logger.warn('Limiter cycle failed: '+String(error));
-     try{await this.db.$executeRaw\`UPDATE limiter_settings SET last_error=\${String(error).slice(0,500)} WHERE id=1\`;}catch{}
+     try{await this.db.$executeRaw`UPDATE limiter_settings SET last_error=${String(error).slice(0,500)} WHERE id=1`;}catch{}
    }finally{this.busy=false}
  }
 }
