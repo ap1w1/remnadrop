@@ -76,12 +76,20 @@ export class AutomationsService implements OnModuleInit,OnModuleDestroy {
       else if(action.type==='rotate_ip'){
         const result=await this.ips.rotateNext(rule.node_uuid,'automation');
         const rotated=result.response as {previousIp?:string;newIp?:string;success:boolean};
-        if(action.updateCloudflare&&rotated.previousIp&&rotated.newIp){
-          // DNS errors are recorded as partial failures; host IP rotation is not rolled back.
-          const dns=await this.cf.syncAfterRotation(rule.node_uuid,rotated.previousIp,rotated.newIp);
-          details.push({type:'cloudflare_dns',success:true,message:JSON.stringify(dns)});
-        }
         details.push({type:action.type,success:true,message:JSON.stringify(result.response)});
+        if(action.updateCloudflare){
+          if(!rotated.previousIp||!rotated.newIp){
+            details.push({type:'cloudflare_dns',success:true,message:'No previous active IP; DNS update skipped'});
+          }else{
+            try {
+              const dns=await this.cf.syncAfterRotation(rule.node_uuid,rotated.previousIp,rotated.newIp);
+              details.push({type:'cloudflare_dns',success:true,message:JSON.stringify(dns)});
+            }catch(error){
+              // IP rotation succeeded and cannot be rolled back automatically.
+              details.push({type:'cloudflare_dns',success:false,message:String(error)});
+            }
+          }
+        }
       }
       else if(action.type==='hide_hosts'){
         // Shared hosts cannot be hidden from just one node. Skip them instead of affecting other nodes.
