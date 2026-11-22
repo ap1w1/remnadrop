@@ -24,6 +24,10 @@ export class LimiterRunnerService implements OnApplicationBootstrap, OnApplicati
   private processing=false;
   private nextStartAt=0;
   constructor(private readonly limiter:LimiterService,private readonly secrets:LimiterBridgeSecretsService){}
+  status():{response:{embedded:boolean;running:boolean;pid:number|null;version:string;redisDatabase:number}}{
+    return {response:{embedded:true,running:!!this.child&&this.child.exitCode===null,
+      pid:this.child?.pid??null,version:'5.1.0',redisDatabase:8}};
+  }
   onApplicationBootstrap():void {
     if(process.env.INSTANCE_TYPE&&process.env.INSTANCE_TYPE!=='api')return;
     this.interval=setInterval(()=>void this.tick(),30000);
