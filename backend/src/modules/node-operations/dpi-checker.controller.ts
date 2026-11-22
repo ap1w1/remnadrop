@@ -21,7 +21,7 @@ export class DpiCheckerController {
  @Get('profile') profile(){return this.dpi.profile();}
  @Get('billing-settings') @Roles(ROLE.ADMIN) billingSettings(){return this.dpi.billingSettings();}
  @Put('billing-settings') @Roles(ROLE.ADMIN) setBillingSettings(@Body() body:{enabled:boolean}){return this.dpi.setBillingSettings(body);}
- @Get('host-options') hostOptions(){return this.dpi.hostOptions();}
+ @Get('host-options') @Roles(ROLE.ADMIN) hostOptions(){return this.dpi.hostOptions();}
  @Get('pops') pops(@Query('location') location:DpiLocation,@Query('optimal') optimal?:string){return this.dpi.pops(location,optimal==='true').then(response=>({response}));}
  @Get('checks') list(){return this.dpi.list();}
  @Get('checks/:id') one(@Param('id',ParseUUIDPipe) id:string){return this.dpi.one(id);}
