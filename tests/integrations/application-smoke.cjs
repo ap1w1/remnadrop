@@ -64,7 +64,12 @@ function stageMigrations(includeLegacy) {
   for (const name of fs.readdirSync(directory)) {
     if (fs.existsSync(path.join(directory, name, 'migration.sql'))
       && (includeLegacy ? name > migration : name >= migration)) {
-      fs.renameSync(path.join(directory, name), path.join(destination, name));
+      // Docker overlay layers can reject directory rename with EXDEV.
+      // These are disposable fixtures; copy completely before removing the source.
+      fs.cpSync(path.join(directory, name), path.join(destination, name), {
+        recursive: true, errorOnExist: true, force: false,
+      });
+      fs.rmSync(path.join(directory, name), { recursive: true });
     }
   }
 }

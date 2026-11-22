@@ -65,7 +65,9 @@ const limiterEvents = [{
   details: null, created_at: now, occurred_at: now, unique_ip_count: 9, connection_count: 9, violations_24h: 3,
   user_status: 'ACTIVE', subscriptionUrl: 'https://example.invalid/sub/fixture',
   state: { ignored: false, permanentIgnore: false, ignoredUntil: null, restoreAt: null }, stateAvailable: true, last_action: null,
-  payload: { violation: { ips, ip_count: 9, device_limit: 5, effective_limit: 5, violation_count_24h: 3, device_group_count: 9, connection_count: 9, grouping_mode: 'none' } },
+  payload: { violation: { ips, ip_count: 9, device_limit: 5, effective_limit: 5, violation_count_24h: 3, device_group_count: 9, connection_count: 9, grouping_mode: 'none' },
+    evidence: { Fetches: { Total: 1, IPs: 1, ASNs: 0, Apps: 0, Rows: [{ IP: ips[0].ip, Org: '', Apps: null, Count: 1, Online: true }] }, Devices: null },
+  },
 }];
 const rules = [{
   id: ruleId, name: 'Резервный IP домена', node_uuid: null, node_name: null, enabled: false,

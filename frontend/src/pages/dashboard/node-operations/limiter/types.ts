@@ -21,7 +21,7 @@ export type Audit={id:string;user_uuid:string|null;user_id:string;username:strin
 export type LimiterEvent={id:string;user_uuid:string|null;user_id:string|null;username:string;event_type:string;mode:Mode;device_limit:number;observed_count:number;
  ips:IpEvidence[];details:string|null;created_at:string;occurred_at:string|null;unique_ip_count:number|null;connection_count:number|null;violations_24h:number|null;
  payload:{violation?:{effective_limit?:number;grouping_mode?:string;subnet_count?:number;asn_group_count?:number};data?:Record<string,unknown>;evidence?:{
- Fetches?:{Total:number;IPs:number;ASNs:number;Apps:number;Rows:Array<{IP:string;Org:string;Apps:string[];Count:number;Online:boolean}>};
+ Fetches?:{Total:number;IPs:number;ASNs:number;Apps:number;Rows:Array<{IP:string;Org:string;Apps:string[]|null;Count:number;Online:boolean}>};
  Devices?:{Items:Array<{Name:string;App:string;Seen:string}>}}};
  subscriptionUrl:string|null;user_status:string|null;state:UserState|null;stateAvailable:boolean;
  last_action:{action:string;source:string;success:boolean;createdAt:string;message:string}|null}

@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build:
     name: Build, upgrade and integration checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:
       contents: read
