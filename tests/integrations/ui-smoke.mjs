@@ -146,7 +146,7 @@ await context.route('**/*', async route => {
   await route.fulfill({ status: method === 'POST' ? 201 : 200, contentType: 'application/json', body: JSON.stringify({ response: result }) });
 });
 const page = await context.newPage();
-page.on('pageerror', error => pageErrors.push(error.message));
+page.on('pageerror', error => pageErrors.push(error.stack || error.message));
 page.setDefaultTimeout(12000);
 const visible = locator => locator.waitFor({ state: 'visible' });
 async function capture(name) { await page.screenshot({ path: join(output, name + '.png'), fullPage: true, animations: 'disabled' }); }
@@ -162,7 +162,7 @@ try {
   await visible(page.getByText('vpn.example.com', { exact: true }).first());
   await noHorizontalOverflow(); await capture('cloudflare-desktop');
   await page.getByRole('button', { name: 'Изменить IP', exact: true }).first().click();
-  await page.getByLabel('Новый IP', { exact: true }).fill('192.0.2.20');
+  await page.getByLabel(/^Новый IP(?:\s*\*)?$/).fill('192.0.2.20');
   await page.getByRole('button', { name: 'Сохранить IP', exact: true }).click();
   await visible(page.getByText('IP записи vpn.example.com изменён', { exact: true }));
   const change = calls.find(call => call.pathname === '/api/cloudflare-dns/records/replace-ip');
@@ -170,8 +170,8 @@ try {
   await page.getByRole('link', { name: 'Настройки', exact: true }).click();
   await visible(page.getByRole('heading', { name: 'Настройки Cloudflare', exact: true }));
   await page.getByRole('button', { name: 'Добавить аккаунт', exact: true }).click();
-  await page.getByLabel('Название аккаунта', { exact: true }).fill('Третий аккаунт');
-  await page.getByLabel('API-токен', { exact: true }).fill('cfat_synthetic_ui_credential_never_sent_to_provider');
+  await page.getByLabel(/^Название аккаунта(?:\s*\*)?$/).fill('Третий аккаунт');
+  await page.getByLabel(/^API-токен(?:\s*\*)?$/).fill('cfat_synthetic_ui_credential_never_sent_to_provider');
   await page.getByRole('button', { name: 'Проверить и подключить', exact: true }).click();
   await visible(page.getByText('Третий аккаунт', { exact: true }));
   await capture('cloudflare-settings-desktop');
@@ -179,7 +179,7 @@ try {
   await page.goto(origin + '/dashboard/tools/limiter');
   await visible(page.getByRole('heading', { name: 'Limiter', exact: true }));
   await page.getByRole('button', { name: /^114644/ }).click();
-  await visible(page.getByText('198.51.100.10', { exact: true }));
+  await visible(page.getByText('198.51.100.10', { exact: true }).first());
   await visible(page.getByText('Финляндия-2', { exact: true }).first());
   await visible(page.getByText('Уникальные IP', { exact: true }));
   assert.equal(await page.getByLabel('Режим', { exact: true }).count(), 0, 'Settings must not replace the default event feed');
@@ -212,7 +212,7 @@ try {
   await visible(page.getByText('Резервный IP домена', { exact: true }));
   await noHorizontalOverflow(); await capture('automations-desktop');
   await page.getByRole('button', { name: 'Создать правило', exact: true }).click();
-  await page.getByLabel('Название', { exact: true }).fill('Проверка нового сценария');
+  await page.getByLabel(/^Название(?:\s*\*)?$/).fill('Проверка нового сценария');
   await page.getByLabel('Когда запускать', { exact: true }).click();
   await page.getByRole('option', { name: 'Вручную', exact: true }).click();
   await page.getByLabel('Нода (если нужна для действий)', { exact: true }).click();
@@ -258,7 +258,7 @@ try {
     await visible(page.getByRole('heading', { name: title, exact: true }));
     if (name === 'limiter') {
       await page.getByRole('button', { name: /^114644/ }).click();
-      await visible(page.getByText('198.51.100.10', { exact: true }));
+      await visible(page.getByText('198.51.100.10', { exact: true }).first());
     }
     if (name === 'cloudflare') await page.getByRole('button', { name: /example\.com/ }).click();
     await noHorizontalOverflow(); await capture(name + '-mobile');

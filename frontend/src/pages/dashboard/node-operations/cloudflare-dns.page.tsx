@@ -175,7 +175,7 @@ export function CloudflareDnsPage() {
                             return <Accordion.Item key={zone.id} value={zone.id}>
                                 <Accordion.Control icon={<TbWorld size={20}/>}><Group justify="space-between" gap="xs" pr="sm"><div><Text fw={600} style={{ overflowWrap: 'anywhere' }}>{zone.name}</Text>
                                     {zone.cloudflareAccountName && zone.cloudflareAccountName !== account.name && <Text c="dimmed" size="xs">{zone.cloudflareAccountName}</Text>}</div>
-                                    <Group gap="xs"><Badge variant="light" color={zoneError ? 'yellow' : zone.status === 'active' ? 'teal' : 'gray'}>{zoneError ? 'Ошибка загрузки' : zone.status === 'active' ? 'Активен' : zone.status}</Badge><Text c="dimmed" size="xs">{records.length} записей</Text></Group>
+                                    <Group gap="xs"><Badge variant="light" color={zoneError ? 'yellow' : zone.status === 'active' ? 'teal' : 'gray'}>{zoneError ? 'Ошибка загрузки' : zone.status === 'active' ? 'Активен' : zone.status}</Badge><Text c="dimmed" size="xs">Записей: {records.length}</Text></Group>
                                 </Group></Accordion.Control>
                                 <Accordion.Panel>{zoneError ? <Alert color="yellow">{zoneError.message}</Alert> : <RecordList records={records} edit={beginEdit} link={beginLinks}/>}</Accordion.Panel>
                             </Accordion.Item>

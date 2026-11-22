@@ -10,6 +10,8 @@ on:
       - 'tests/**'
       - 'scripts/compose-files.py'
       - 'scripts/patch-limiter.py'
+      - 'scripts/fetch-editor-assets.mjs'
+      - 'editor-assets.lock.json'
       - 'migrate-2.8.1.sh'
       - 'upgrade-fork.sh'
       - '.github/workflows/integrations-qa.yml'
@@ -50,6 +52,10 @@ jobs:
             test -s /app/prisma/migrations/20261122221000_cloudflare_accounts/migration.sql
             test -s /app/prisma/migrations/20261122222000_automation_workflows/migration.sql
             test -f /app/frontend/index.html
+            test -s /app/frontend/assets/wasm_exec.js
+            test -s /app/frontend/assets/main.wasm
+            test -s /app/frontend/assets/xray.schema.json
+            test -s /app/frontend/assets/xray.schema.cn.json
             test -x /usr/local/bin/remnawave-limiter
             test -s /etc/ssl/certs/ca-certificates.crt
             grep -RqlF "/dashboard/tools/limiter" /app/frontend
@@ -68,6 +74,7 @@ jobs:
         run: |
           python3 -m unittest discover -s backup-agent -p 'test*.py' -v
       - name: Render production UI and exercise desktop and mobile workflows
+        id: ui
         if: ${{ always() && !cancelled() && steps.package.outcome == 'success' }}
         run: |
           npm install --prefix "$RUNNER_TEMP/remnadrop-ui-qa" --no-save playwright@1.57.0
@@ -86,4 +93,12 @@ jobs:
           path: artifacts/ui/
           if-no-files-found: ignore
           retention-days: 7
+      - name: Upload production UI bundle after a browser failure
+        if: ${{ always() && !cancelled() && steps.ui.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-ui-bundle
+          path: artifacts/frontend/
+          if-no-files-found: ignore
+          retention-days: 1
 

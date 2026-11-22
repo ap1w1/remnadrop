@@ -32,7 +32,10 @@ RUN ln -s /build/node_modules /fork-libs/contract/node_modules \
     && cp -a /fork-libs/contract/build/. /build/node_modules/@remnawave/backend-contract/build/ \
     && cp -a /fork-libs/subscription-page/build/. /build/node_modules/@remnawave/subscription-page-types/build/
 COPY frontend/ ./
-RUN NODE_OPTIONS=--max-old-space-size=3072 npm run start:build
+COPY editor-assets.lock.json /remnadrop/editor-assets.lock.json
+COPY scripts/fetch-editor-assets.mjs /remnadrop/scripts/fetch-editor-assets.mjs
+RUN node /remnadrop/scripts/fetch-editor-assets.mjs /build/public/assets \
+    && NODE_OPTIONS=--max-old-space-size=3072 npm run start:build
 
 FROM node:24.22.3-trixie-slim AS backend-build
 WORKDIR /app
