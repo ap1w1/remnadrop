@@ -9,6 +9,7 @@ import {
     TbPlayerPlay, TbPlus, TbRefresh, TbRoute, TbSearch, TbShieldCheck, TbTrash,
 } from 'react-icons/tb'
 import { Page } from '@shared/ui'
+import { nodeOptionLabel } from '@shared/utils/misc/node-option-label'
 import { instance } from '@shared/api/axios'
 import { AutomationBuilder, AutomationPreviewView } from './automation-builder'
 import {
@@ -181,7 +182,7 @@ export function AutomationsPage() {
                 <div className={classes.toolbar}>
                     <TextInput aria-label="Поиск правил" placeholder="Найти правило, ноду или домен" leftSection={<TbSearch size={18} />} value={search} onChange={event => setSearch(event.currentTarget.value)} />
                     <Select aria-label="Состояние правил" allowDeselect={false} value={stateFilter} onChange={setStateFilter} data={[{ value: 'all', label: 'Все состояния' }, { value: 'enabled', label: 'Включены' }, { value: 'paused', label: 'На паузе' }, { value: 'manual', label: 'Ручные' }]} />
-                    <Select aria-label="Фильтр по ноде" searchable clearable placeholder="Все ноды" value={nodeFilter} onChange={setNodeFilter} data={nodes.map(node => ({ value: node.uuid, label: node.name }))} />
+                    <Select aria-label="Фильтр по ноде" searchable clearable placeholder="Все ноды" value={nodeFilter} onChange={setNodeFilter} data={nodes.map(node => ({ value: node.uuid, label: nodeOptionLabel(node) }))} />
                 </div>
                 {loading ? [0, 1].map(key => <Skeleton key={key} height={160} radius="md" />) : !rules.length ? <Card withBorder radius="md" p="xl"><Stack align="center" gap="sm">
                     <ThemeIcon variant="light" size={56} radius="xl"><TbRoute size={28} /></ThemeIcon><Title order={4}>Соберите первый сценарий</Title>
