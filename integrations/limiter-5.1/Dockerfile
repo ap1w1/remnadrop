@@ -1,6 +1,6 @@
 # Upstream Go binary is copied UNMODIFIED from the author's pinned immutable image.
-# sha b422f430de562d1fe48b417e0431b934f53495be = release 5.1.0.
-FROM ghcr.io/syvlech/remnawave-limiter:b422f43 AS upstream
+# sha c5ce367c5f38a345fad59bb813fd9fd67c80a329 = release 5.1.0.
+FROM ghcr.io/syvlech/remnawave-limiter:c5ce367 AS upstream
 FROM python:3.12-alpine
 RUN apk add --no-cache ca-certificates tzdata \
     && adduser -D -u 10001 limiter \
