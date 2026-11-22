@@ -16,3 +16,6 @@ CREATE TABLE dpi_checker_billing_receipts (
 
 -- Persist the upstream check response after recursive credential redaction.
 ALTER TABLE dpi_check_jobs ADD COLUMN remote_response jsonb;
+
+-- Preserve the node chosen for a diagnostic and enforce its host membership.
+ALTER TABLE dpi_check_jobs ADD COLUMN node_uuid uuid REFERENCES nodes(uuid) ON DELETE SET NULL;
