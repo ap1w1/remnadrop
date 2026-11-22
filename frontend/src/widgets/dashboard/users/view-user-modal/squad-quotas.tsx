@@ -86,9 +86,9 @@ export function SquadQuotas({userUuid}:{userUuid:string}){
     }
     const current=quotas.find(q=>q.node_uuid===selected)
     return <Card withBorder radius="lg" p="lg"><Stack gap="md">
-        <div><Text fw={700} size="lg">Лимиты по нодам</Text><Text size="sm" c="dimmed">Ограничения относятся к пользователю во всех сквадах. Превышение лимита блокирует доступ только к соответствующей ноде.</Text></div>
+        <div><Text fw={700} size="lg">Лимиты по нодам</Text><Text size="sm" c="dimmed">Обычная подписка сохраняет исходный объём трафика. Если подписка безлимитная, безлимит остаётся на всех нодах, кроме тех, которым здесь явно назначен лимит. Превышение закрывает доступ только к соответствующей ноде, не ко всей подписке.</Text></div>
         {legacy.length>0&&<Text c="yellow" size="xs">Есть старые лимиты сквадов для проверки: {legacy.join(', ')}. Значения сохранены.</Text>}
-        {policy.mode==='legacy'&&<Text c="dimmed" size="xs">Режим совместимости: старые лимиты не изменены. Общие настройки включатся после сохранения.</Text>}
+        {policy.mode==='legacy'&&<Text c="dimmed" size="xs">Режим совместимости: существующие лимиты нод работают независимо. Для общего периода сброса сначала сохраните настройки выше; отдельные лимиты можно изменять и без этого.</Text>}
         {pendingSync&&<Alert color="yellow" title="Синхронизация в очереди">Панель применит изменения к нодам при следующем проходе планировщика. Возможна небольшая задержка.</Alert>}
         {error&&<Alert color="red" withCloseButton onClose={()=>setError('')}>{error}</Alert>}
         {success&&<Alert color="teal" withCloseButton onClose={()=>setSuccess('')}>{success}</Alert>}
@@ -105,14 +105,15 @@ export function SquadQuotas({userUuid}:{userUuid:string}){
                 <Button size="sm" loading={busy} disabled={threshold===''||Number(threshold)<1||Number(threshold)>99||(days!==''&&(Number(days)<1||Number(days)>366))} onClick={savePolicy}>Сохранить общие настройки</Button>
             </Group>
         </Stack></Card>
-        <Text fw={700}>Индивидуальные значения</Text>
+        <Text fw={700}>Индивидуальные ограничения — исключения из общего тарифа</Text>
+        <Alert color="blue" p="sm">Ноды без записи в таблице не ограничиваются этим разделом. Пустой объём удаляет числовое ограничение выбранной записи, но сохраняет учёт; чтобы полностью убрать исключение, нажмите «Удалить лимит».</Alert>
         <Select searchable label="Нода" placeholder="Выберите ноду" data={nodes} value={selected} onChange={selectNode}/>
         {current&&<Group gap="xs"><Badge color={current.blocked?'red':'teal'}>{current.blocked?'Заблокировано':'Доступно'}</Badge><Text size="xs" c="dimmed">Расход: {bytesLabel(current.used_bytes)} · Лимит: {bytesLabel(current.limit_bytes)}</Text></Group>}
         <Group grow align="end" wrap="nowrap">
             <TextInput label="Объём" description="Пусто — безлимит, 0 — запрет доступа" placeholder="Например, 80" value={limit} onChange={e=>setLimit(e.currentTarget.value)}/>
             <Select label="Единицы" w={110} data={[{value:'gib',label:'ГиБ'},{value:'mib',label:'МиБ'},{value:'b',label:'Байты'}]} value={unit} onChange={v=>setUnit(v??'gib')} allowDeselect={false}/>
         </Group>
-        <Group justify="flex-end"><Button size="sm" disabled={!selected||busy||policy.mode!=='shared'||(limit!==''&&!/^\d+(\.\d{1,3})?$/.test(limit))} loading={busy} onClick={saveNode}>Сохранить лимит ноды</Button></Group>
+        <Group justify="flex-end"><Button size="sm" disabled={!selected||busy||(limit!==''&&!/^\d+(\.\d{1,3})?$/.test(limit))} loading={busy} onClick={saveNode}>Сохранить лимит ноды</Button></Group>
         <Table.ScrollContainer minWidth={620}><Table highlightOnHover>
             <Table.Thead><Table.Tr><Table.Th>Нода</Table.Th><Table.Th>Расход / лимит</Table.Th><Table.Th>Доступ</Table.Th></Table.Tr></Table.Thead>
             <Table.Tbody>{quotas.map(q=><Table.Tr key={q.node_uuid}>
