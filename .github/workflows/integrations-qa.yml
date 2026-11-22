@@ -31,3 +31,20 @@ jobs:
       - name: Agent unit tests
         run: |
           python3 -m unittest discover -s backup-agent -p 'test*.py' -v
+
+  upstream-limiter:
+    name: Upstream Limiter 5.1.0 pinned image and supervisor syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python supervisor syntax check
+        run: python3 -m py_compile integrations/limiter-5.1/supervisor.py
+      - name: Check Compose configuration
+        run: |
+          cp integrations/limiter-5.1/.env.limiter.example integrations/limiter-5.1/.env.limiter
+          docker compose -f integrations/limiter-5.1/docker-compose.yml config --quiet
+      - name: Build exact upstream 5.1.0 binary wrapper
+        run: docker build --progress=plain -f integrations/limiter-5.1/Dockerfile -t remnadrop-limiter-5.1 .
