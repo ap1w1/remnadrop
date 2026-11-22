@@ -20,6 +20,11 @@ export class CloudflareDnsController {
  @Delete('settings') deleteToken(){return this.cf.removeToken();}
  @Get('overview') overview(){return this.cf.overview();}
  @Get('events') events(){return this.cf.events();}
+ @Get('links') links(){return this.cf.explicitLinks();}
+ @Put('links') link(@Body() body:{zoneId:string;recordId:string;hostUuid:string}){return this.cf.bindHost(body);}
+ @Delete('links/:zoneId/:recordId/:hostUuid') unlink(@Param('zoneId') zoneId:string,@Param('recordId') recordId:string,@Param('hostUuid') hostUuid:string){
+   return this.cf.unbindHost({zoneId,recordId,hostUuid});
+ }
  @Put('zones') bind(@Body() input:{domain:string;zoneId:string;autoSync:boolean}){
    return this.cf.upsertBinding(input.domain,input.zoneId,input.autoSync);
  }
