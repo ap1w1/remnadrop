@@ -2,7 +2,7 @@ import { Badge, Box, Button, Card, Group, Stack, Text } from '@mantine/core'
 import { useMemo, useRef, useState } from 'react'
 import { TbFocus2, TbHandMove, TbMinus, TbPlus } from 'react-icons/tb'
 
-export type GraphVertex = {id:string;kind:'node'|'profile'|'inbound'|'host';label:string;detail:string;disabled?:boolean}
+export type GraphVertex = {id:string;kind:'node'|'profile'|'inbound'|'host';label:string;detail:string;disabled?:boolean;hidden?:boolean}
 export type GraphEdge = {from:string;to:string}
 type Pt = {x:number;y:number}
 type Props = {vertices:GraphVertex[];edges:GraphEdge[]}
@@ -104,19 +104,20 @@ export function TopologyCanvas({vertices,edges}:Props) {
                 onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setSelected(v.id)}}}
                 style={{cursor:'move',outline:'none'}}>
                   <rect width={WIDTH} height={HEIGHT} rx={14} fill={paint.fill}
-                    stroke={active?'#ffffff':v.disabled?'#ad6565':paint.stroke}
+                    stroke={active?'#ffffff':v.disabled?'#ad6565':v.hidden?'#a78bfa':paint.stroke}
                     strokeWidth={active?2.6:1.4}/>
                   <rect x="12" y="10" width="7" height="18" rx="3" fill={paint.stroke}/>
-                  <text x="28" y="24" fontSize="11" fontWeight="600" fill="#bbccd9">{kindLabel[v.kind].toUpperCase()}</text>
+                  <text x="28" y="24" fontSize="11" fontWeight="600" fill="#bbccd9">{kindLabel[v.kind].toUpperCase()}{v.kind==='host'&&v.hidden?' · СКРЫТ':v.disabled?' · ОТКЛЮЧЁН':''}</text>
                   <text x="14" y="46" fontSize="14" fontWeight="650" fill="#ffffff">{truncate(v.label,27)}</text>
                   <text x="14" y="63" fontSize="11" fill="#b5c4d2">{truncate(v.detail,34)}</text>
+                  {v.kind==='host'&&v.hidden&&<g transform="translate(197 9)" fill="none" stroke="#c4b5fd" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1l19 19M3.8 8.7C7.8 3.8 15 3 19 9c1 1.2 1.8 2.2 2 2.7-1.5 3.3-5 6.2-9 6.2a10 10 0 0 1-3.4-.6M3 10.7a13 13 0 0 0-1 1c.8 1.8 2.2 3.4 4 4.6"/></g>}
               </g>
             })}
           </g>
         </svg>
       </Box>
       <Group gap="xs" wrap="wrap"><TbHandMove size={16}/><Text c="dimmed" size="xs">Карточек: {vertices.length}, связей: {edges.length}. Выбор не изменяет настройки панели.</Text></Group>
-      {active&&<Card withBorder radius="md" padding="sm"><Group justify="space-between" wrap="wrap"><div><Text fw={700}>{active.label}</Text><Text c="dimmed" size="xs">{kindLabel[active.kind]} · {active.detail}</Text></div><Badge color={active.disabled?'red':'cyan'} variant="light">{active.disabled?'Отключён':'Выбран'}</Badge></Group></Card>}
+      {active&&<Card withBorder radius="md" padding="sm"><Group justify="space-between" wrap="wrap"><div><Text fw={700}>{active.label}</Text><Text c="dimmed" size="xs">{kindLabel[active.kind]} · {active.detail}</Text></div><Badge color={active.disabled?'red':active.hidden?'violet':'cyan'} variant="light">{active.disabled?'Отключён':active.hidden?'Скрыт':'Выбран'}</Badge></Group></Card>}
     </Stack>
   </Card>
 }
