@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@common/database/prisma.service';
 import { isIP } from 'node:net';
 import { LimiterCredentialsService } from './limiter-credentials.service';
@@ -121,6 +121,7 @@ type EventRow={id:string;user_uuid:string|null;user_id:string|null;username:stri
 
 @Injectable()
 export class LimiterService {
+ private readonly logger=new Logger(LimiterService.name);
  private lifecycle:Promise<void>=Promise.resolve();
  constructor(private readonly db:PrismaService,private readonly credentials:LimiterCredentialsService,
   private readonly secrets:LimiterBridgeSecretsService,private readonly control:LimiterControlService,
@@ -317,7 +318,8 @@ export class LimiterService {
      const {lastScanAt,lastError,engineVersion,...current}=(await this.settings()).response;
      const settings=fromOverrides(current,overrides);
      await this.db.$executeRaw`UPDATE limiter_settings SET config=config||${JSON.stringify(mirroredSettings(settings))}::jsonb,updated_at=now() WHERE id=1`;
-     await this.outgoing.enqueue(createHash('sha256').update(timestamp+'.').update(raw).digest('hex'),event,{event,occurredAt:new Date(Number(timestamp)*1000).toISOString()});
+     await this.outgoing.enqueue(createHash('sha256').update(timestamp+'.').update(raw).digest('hex'),event,{event,occurredAt:new Date(Number(timestamp)*1000).toISOString()})
+       .catch(error=>this.logger.warn('Limiter outgoing enqueue failed: '+String(error)));
      return {response:{accepted:true}};
    }
    const puser=object(payload.user),userId=Number(puser.user_id),hasUser=!['daily_report','update_available'].includes(event);
@@ -337,7 +339,8 @@ export class LimiterService {
        requestId,message:typeof data.message==='string'?data.message:''});
      if(user&&data.success&&(action==='ignore'||action==='unignore'))await this.syncPermanentIgnore(user.uuid,action==='ignore');
      await this.outgoing.enqueue('action:'+requestId,event,{user:{uuid:user?.uuid??null,id:userId,username},
-       action,source,minutes,success:data.success,message:typeof data.message==='string'?data.message.slice(0,350):''});
+       action,source,minutes,success:data.success,message:typeof data.message==='string'?data.message.slice(0,350):''})
+       .catch(error=>this.logger.warn('Limiter outgoing enqueue failed: '+String(error)));
      return {response:{accepted:true}};
    }
    const v=object(payload.violation),ips=Array.isArray(v.ips)?v.ips.slice(0,1000):[];
@@ -356,7 +359,8 @@ export class LimiterService {
    await this.outgoing.enqueue(hash,event,{user:{uuid:user?.uuid??null,id:hasUser?userId:null,username},
      violation:{deviceLimit:boundedInt(v.device_limit),observedCount:boundedInt(v.device_group_count??v.ip_count),
        uniqueIpCount:unique,connectionCount:connection,violations24h:violations,
-       ips:ips.slice(0,100)},occurredAt:occurred.toISOString(),mode:payload.action_mode==='auto'?'auto':'manual'});
+       ips:ips.slice(0,100)},occurredAt:occurred.toISOString(),mode:payload.action_mode==='auto'?'auto':'manual'})
+     .catch(error=>this.logger.warn('Limiter outgoing enqueue failed: '+String(error)));
    return {response:{accepted:true}};
  }
 }
