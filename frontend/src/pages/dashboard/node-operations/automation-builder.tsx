@@ -82,43 +82,80 @@ function DnsActionFields({ action, accounts, hasRotation, onChange }: {
 
 type DpiAction = Extract<AutomationAction, { type: 'dpi_check' }>
 type DpiPop = { id: number; name?: string; city?: string; region?: string; operator?: string }
-function DpiRegionFields({ action, onChange, dpiCostLimit }: {
-    action: DpiAction; onChange: (action: DpiAction) => void; dpiCostLimit: number
-}) {
-    const [pops, setPops] = useState<DpiPop[]>([])
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState('')
-    const specificPoints = action.pop_ids !== undefined
-    useEffect(() => {
-        if (!specificPoints) { setPops([]); return }
-        const controller = new AbortController()
-        setPops([]); setError(''); setLoading(true)
-        void instance.get('/api/dpi-checker/pops', { params: { location: action.location }, signal: controller.signal })
-            .then(response => {
+type DpiRegion = {location:string; pop_ids?:number[]}
+const dpiCountries=[
+    {value:'russia',label:'Россия'}, {value:'russia_mobile',label:'Россия · мобильные сети'},
+    {value:'china',label:'Китай'}, {value:'iran',label:'Иран'}, {value:'turkmenistan',label:'Туркменистан'},
+]
+function DpiPointPicker({ target, onChange }: {target:DpiRegion;onChange:(region:DpiRegion)=>void}) {
+    const [pops,setPops]=useState<DpiPop[]>([])
+    const [loading,setLoading]=useState(false),[error,setError]=useState('')
+    const specific=target.pop_ids!==undefined
+    useEffect(()=>{
+        if (!specific) {setPops([]);return}
+        const controller=new AbortController()
+        setPops([]);setError('');setLoading(true)
+        void instance.get('/api/dpi-checker/pops',{params:{location:target.location},signal:controller.signal})
+            .then(response=>{
                 if (controller.signal.aborted) return
-                const data = response.data.response
-                setPops(Array.isArray(data) ? data : Array.isArray(data?.pops) ? data.pops : [])
+                const data=response.data.response
+                setPops(Array.isArray(data)?data:Array.isArray(data?.pops)?data.pops:[])
             })
-            .catch(cause => { if (!controller.signal.aborted) setError(apiError(cause, 'Не удалось получить региональные точки проверки')) })
-            .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-        return () => controller.abort()
-    }, [action.location, specificPoints])
+            .catch(cause=>{if(!controller.signal.aborted)setError(apiError(cause,'Не удалось загрузить географические точки'))})
+            .finally(()=>{if(!controller.signal.aborted)setLoading(false)})
+        return ()=>controller.abort()
+    },[target.location,specific])
+    return <Card withBorder radius="md" p="sm">
+        <Stack gap="sm">
+            <Text fw={600} size="sm">{dpiCountries.find(item=>item.value===target.location)?.label??target.location}</Text>
+            <Switch checked={specific} label="Выбрать конкретные регионы и точки (PoP)"
+                description="Иначе сервис автоматически выберет оптимальные точки"
+                onChange={e=>onChange({...target,pop_ids:e.currentTarget.checked?[]:undefined})}/>
+            {specific&&<MultiSelect label="Города, регионы и операторы" searchable clearable
+                maxValues={100} disabled={loading} placeholder={loading?'Загрузка…':'Поиск по городу, региону, оператору'}
+                value={(target.pop_ids??[]).map(String)}
+                onChange={values=>onChange({...target,pop_ids:values.map(Number)})}
+                data={pops.map(pop=>({value:String(pop.id),
+                    label:[pop.region,pop.city,pop.operator,pop.name].filter(Boolean).filter((item,i,all)=>all.indexOf(item)===i).join(' · ')||'PoP '+pop.id}))}/>}
+            {error&&<Alert color="red">{error}</Alert>}
+        </Stack>
+    </Card>
+}
+function DpiRegionFields({ action, onChange, dpiCostLimit }: {
+    action: DpiAction; onChange:(action:DpiAction)=>void;dpiCostLimit:number
+}) {
+    const branches=!!action.gate
+    const locations:DpiRegion[]=action.locations?.length?action.locations:[{location:action.location,pop_ids:action.pop_ids}]
+    const changeLocations=(next:DpiRegion[])=>{
+        const first=next[0]??{location:'russia'}
+        onChange({...action,location:first.location,pop_ids:first.pop_ids,locations:branches?next:undefined})
+    }
     return <Stack gap="sm">
-        <Select label="Страна и тип сети" searchable allowDeselect={false} value={action.location}
-            data={[{ value: 'russia', label: 'Россия' }, { value: 'russia_mobile', label: 'Россия · мобильные сети' },
-                { value: 'china', label: 'Китай' }, { value: 'iran', label: 'Иран' }, { value: 'turkmenistan', label: 'Туркменистан' }]}
-            onChange={value => onChange({ ...action, location: value || 'russia', pop_ids: specificPoints ? [] : undefined })}/>
-        <Switch label="Выбирать конкретные регионы и точки проверки"
-            description="Отключено — сервис самостоятельно выбирает оптимальные точки; включено — выбирайте города, регионы и операторов из доступных PoP"
-            checked={specificPoints} onChange={event => onChange({ ...action, pop_ids: event.currentTarget.checked ? [] : undefined })}/>
-        {specificPoints && <MultiSelect label="Регионы и точки проверки (PoP)" searchable clearable
-            placeholder={loading ? 'Загрузка регионов…' : 'Найти город, регион или оператора'} disabled={loading}
-            maxValues={100} value={(action.pop_ids ?? []).map(String)}
-            onChange={values => onChange({ ...action, pop_ids: values.map(Number) })}
-            data={pops.map(pop => ({ value: String(pop.id), label: [pop.name, pop.city, pop.region, pop.operator]
-                .filter(Boolean).filter((item, index, all) => all.indexOf(item) === index).join(' · ') || 'PoP ' + pop.id }))}/>}
-        {error && <Alert color="red">{error}</Alert>}
-        <Text size="xs" c="dimmed">Проверка платная, не более ${dpiCostLimit} USD за действие. Результат отображается в DPI Checker. Выбор PoP пока не задаёт автоматическое ветвление после проверки.</Text>
+        <Switch checked={branches}
+            label="Дождаться результата и выбрать действие по доступности"
+            description="При недоступности в N регионах запускается аварийная ветка; если доступно — другая. При ошибке ничего не переключается автоматически."
+            onChange={event=>{
+                const gate=event.currentTarget.checked?{minUnavailableRegions:2,timeoutMinutes:15}:undefined
+                const first=locations[0]
+                onChange({...action,gate,locations:gate?locations:undefined,location:first.location,pop_ids:first.pop_ids})
+            }}/>
+        {branches?<MultiSelect label="Страны и типы сетей" searchable clearable maxValues={5}
+            description="Платные проверки будут запущены по выбранным странам; порог учитывает уникальные регионы, а не количество запросов"
+            data={dpiCountries} value={locations.map(item=>item.location)}
+            onChange={values=>changeLocations(values.map(value=>locations.find(item=>item.location===value)??{location:value}))}/>:
+            <Select label="Страна и тип сети" searchable allowDeselect={false} value={action.location} data={dpiCountries}
+                onChange={value=>changeLocations([{location:value||'russia'}])}/>}
+        {locations.map((target,index)=><DpiPointPicker key={target.location} target={target}
+            onChange={value=>changeLocations(locations.map((item,i)=>i===index?value:item))}/>)}
+        {branches&&<SimpleGrid cols={{base:1,sm:2}}>
+            <NumberInput min={1} max={100} allowDecimal={false}
+                label="Недоступно минимум в N регионах" value={action.gate!.minUnavailableRegions}
+                onChange={value=>onChange({...action,gate:{...action.gate!,minUnavailableRegions:Number(value)}})}/>
+            <NumberInput min={3} max={45} allowDecimal={false}
+                label="Максимум ожидания, минут" value={action.gate!.timeoutMinutes}
+                onChange={value=>onChange({...action,gate:{...action.gate!,timeoutMinutes:Number(value)}})}/>
+        </SimpleGrid>}
+        <Text size="xs" c="dimmed">Лимит суммарной стоимости проверок: ${dpiCostLimit} USD. Неполные, ошибочные или просроченные результаты дают «Неопределённо» — автоматический failover не выполняется.</Text>
     </Stack>
 }
 
