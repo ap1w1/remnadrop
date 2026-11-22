@@ -34,7 +34,7 @@ function statusBadge(status?: string | null) {
 function toInput(rule: AutomationRule): AutomationInput {
     return {
         name: rule.name, node_uuid: rule.node_uuid, enabled: rule.enabled,
-        trigger_type: rule.trigger_type || 'online_drop', drop_percent: rule.drop_percent,
+        trigger_type: rule.trigger_type || 'online_drop', online_operator: rule.online_operator || 'lt', online_value: rule.online_value ?? 10, drop_percent: rule.drop_percent,
         min_online: rule.min_online, duration_minutes: rule.duration_minutes, cooldown_minutes: rule.cooldown_minutes,
         interval_minutes: rule.interval_minutes || 60, failure_policy: rule.failure_policy || 'continue', actions: rule.actions,
     }
