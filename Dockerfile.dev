@@ -39,6 +39,8 @@ ENV NODE_ENV=production
 # Original upstream Limiter 5.1.0 binary is embedded in the SAME panel image.
 # It is started and stopped by NestJS LimiterRunnerService, not another container.
 COPY --from=limiter-upstream /usr/local/bin/remnawave-limiter /usr/local/bin/remnawave-limiter
-RUN mkdir -p /var/lib/remnawave/limiter/geoip && chmod 755 /usr/local/bin/remnawave-limiter
+RUN mkdir -p /var/lib/remnawave/limiter/geoip \
+    && chown -R 10001:10001 /var/lib/remnawave/limiter \
+    && chmod 755 /usr/local/bin/remnawave-limiter
 COPY backend/configs /var/lib/remnawave/configs
 CMD ["node", "dist/src/main.js"]
