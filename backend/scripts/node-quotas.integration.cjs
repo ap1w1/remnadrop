@@ -10,6 +10,7 @@ async function main(){const db=new PrismaService();await db.$connect();try{
  const profile=await db.configProfiles.create({data:{name:id,config:{inbounds:[]}}});
  const node=await db.nodes.create({data:{name:'one-'+id,address:id+'.invalid',activeConfigProfileUuid:profile.uuid}});
  const other=await db.nodes.create({data:{name:'two-'+id,address:'two-'+id+'.invalid'}});
+ const unrestricted=await db.nodes.create({data:{name:'unlimited-'+id,address:'unlimited-'+id+'.invalid'}});
  const inbound=await db.configProfileInbounds.create({data:{profileUuid:profile.uuid,tag:id,type:'vless'}});
  await db.configProfileInboundsToNodes.create({data:{nodeUuid:node.uuid,configProfileInboundUuid:inbound.uuid}});
  for(let i=0;i<2;i++){const squad=await db.internalSquads.create({data:{name:i+'-'+id}});await db.internalSquadMembers.create({data:{userId:user.tId,internalSquadUuid:squad.uuid}});await db.internalSquadInbounds.create({data:{internalSquadUuid:squad.uuid,inboundUuid:inbound.uuid}});}
@@ -19,6 +20,8 @@ async function main(){const db=new PrismaService();await db.$connect();try{
  await q.record('two',[{...usage[0],b:'40'}],true);
  assert.equal((await q.list(user.uuid)).find(q=>q.node_uuid===node.uuid).blocked,true);
  assert.equal((await q.list(user.uuid)).find(q=>q.node_uuid===other.uuid).used_bytes,0n);
+ assert.equal((await q.list(user.uuid)).find(q=>q.node_uuid===unrestricted.uuid),undefined,'no explicit node quota should be required for an unrestricted node');
+ assert.equal((await q.blockedUsers(unrestricted.uuid)).size,0,'unlimited node should remain available');
  assert.equal(await db.internalSquadMembers.count({where:{userId:user.tId}}),2,'quota must preserve all squad memberships');
  assert.equal((await db.userTraffic.findUnique({where:{tId:user.tId}})).usedTrafficBytes,100n);
  assert.equal((await q.blockedUsers(node.uuid)).has(String(user.tId)),true);
@@ -26,9 +29,11 @@ async function main(){const db=new PrismaService();await db.$connect();try{
  const configHandler=new GetPreparedConfigWithUsersHandler({getUsersForConfigStream:async function*(){yield [{tId:user.tId,vlessUuid:user.vlessUuid,trojanPassword:id,ssPassword:id,tags:[id]}]}},{execute:async query=>({isOk:true,response:query.constructor.name==='GetSnippetsQuery'?[]:{config:{inbounds:[{tag:id,protocol:'vless',port:10001,settings:{clients:[],decryption:'none'}}],outbounds:[{protocol:'freedom',tag:'direct'}]}}})},db);
  const blockedConfig=await configHandler.execute({configProfileUuid:profile.uuid,activeInbounds:[{tag:id}],nodeUuid:node.uuid});
  const allowedConfig=await configHandler.execute({configProfileUuid:profile.uuid,activeInbounds:[{tag:id}],nodeUuid:other.uuid});
- assert.equal(blockedConfig.isOk,true);assert.equal(allowedConfig.isOk,true);
+ const unlimitedConfig=await configHandler.execute({configProfileUuid:profile.uuid,activeInbounds:[{tag:id}],nodeUuid:unrestricted.uuid});
+ assert.equal(blockedConfig.isOk,true);assert.equal(allowedConfig.isOk,true);assert.equal(unlimitedConfig.isOk,true);
  assert.equal(blockedConfig.response.config.inbounds[0].settings.clients.length,0);
  assert.equal(allowedConfig.response.config.inbounds[0].settings.clients.length,1);
+ assert.equal(unlimitedConfig.response.config.inbounds[0].settings.clients.length,1,'an unrestricted node must not inherit quota from another node');
  console.log('PASS: rebuilding shared-profile configs keeps exhausted user off only the blocked node');
  const host={uuid:randomUUID(),configProfileInboundUuid:inbound.uuid,nodes:[{nodeUuid:node.uuid}]};
  let contexts=await q.hostContexts(user.uuid,[host]);assert.equal(contexts.get(host.uuid).blocked,true);assert.equal(contexts.get(host.uuid).values.NODE_TRAFFIC_PERCENT(),'100');
