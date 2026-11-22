@@ -180,8 +180,26 @@ async function noHorizontalOverflow() {
   const width = await page.evaluate(() => ({ content: document.documentElement.scrollWidth, viewport: window.innerWidth }));
   assert(width.content <= width.viewport + 1, `Horizontal page overflow: ${width.content} > ${width.viewport}`);
 }
+const scenarios = [], failures = [];
+async function scenario(name, run) {
+  try {
+    await run();
+    scenarios.push({ name, status: 'passed' });
+  } catch (error) {
+    scenarios.push({ name, status: 'failed' });
+    failures.push({ name, message: error.stack || String(error) });
+    console.error('FAIL ' + name + ': ' + error.message);
+    await capture(name + '-failure').catch(() => {});
+    const controls = await page.locator('input').evaluateAll(elements => elements.map(element => ({
+      type: element.type, role: element.getAttribute('role'), ariaLabel: element.getAttribute('aria-label'),
+      labels: Array.from(element.labels || [], label => label.textContent), checked: element.checked,
+    }))).catch(() => []);
+    await writeFile(join(output, name + '-failure.json'), JSON.stringify({ message: error.stack, pageErrors, unexpected, controls, text: await page.locator('body').innerText().catch(() => '') }, null, 2));
+  }
+}
 
 try {
+  await scenario('cloudflare', async () => {
   await page.goto(origin + '/dashboard/tools/cloudflare-dns');
   await visible(page.getByRole('heading', { name: 'Cloudflare DNS', exact: true }));
   await page.getByRole('button', { name: /example\.com/ }).click();
@@ -201,7 +219,9 @@ try {
   await page.getByRole('button', { name: 'Проверить и подключить', exact: true }).click();
   await visible(page.getByText('Третий аккаунт', { exact: true }));
   await capture('cloudflare-settings-desktop');
+  });
 
+  await scenario('limiter', async () => {
   await page.goto(origin + '/dashboard/tools/limiter');
   await visible(page.getByRole('heading', { name: 'Limiter', exact: true }));
   await page.getByRole('button', { name: /^114644/ }).click();
@@ -223,7 +243,7 @@ try {
   await visible(page.getByRole('combobox', { name: 'Режим', exact: true }));
   await capture('limiter-settings-desktop');
   await page.getByRole('tab', { name: 'Уведомления', exact: true }).click();
-  const duplication = page.getByLabel('Дублировать события и действия в Telegram', { exact: true });
+  const duplication = page.getByRole('switch', { name: /^Дублировать события и действия в Telegram/ });
   await visible(duplication);
   assert.equal(await duplication.isChecked(), true);
   await duplication.uncheck();
@@ -232,7 +252,9 @@ try {
   assert(calls.some(call => call.pathname === '/api/limiter/settings' && call.method === 'PUT' && call.body.telegramNotifications === false));
   assert(!calls.some(call => call.pathname === '/api/limiter/credentials' && call.method === 'DELETE'), 'Turning off duplication must preserve credentials');
   await capture('limiter-telegram-duplication');
+  });
 
+  await scenario('automations', async () => {
   await page.goto(origin + '/dashboard/management/automations');
   await visible(page.getByRole('heading', { name: 'Автоматизации', exact: true }));
   await visible(page.getByText('Резервный IP домена', { exact: true }));
@@ -266,11 +288,16 @@ try {
   await visible(page.getByText('Выполнение запущено. Результаты действий появятся в журнале.', { exact: true }));
   assert(calls.some(call => call.pathname === `/api/node-automations/${ruleId}/run` && call.body.confirmed === true));
   await capture('automation-execution-history');
+  });
 
+  await scenario('recap', async () => {
+  await page.goto(origin + '/dashboard/management/automations');
+  await visible(page.getByRole('heading', { name: 'Автоматизации', exact: true }));
   await page.getByRole('button', { name: 'Recap', exact: true }).click();
   await visible(page.getByRole('dialog').getByText('RemnaDrop', { exact: true }));
   await capture('recap-branding');
   await page.keyboard.press('Escape');
+  });
 
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [path, title, name] of [
@@ -280,6 +307,7 @@ try {
     ['/dashboard/tools/cloudflare-dns/settings', 'Настройки Cloudflare', 'cloudflare-settings'],
     ['/dashboard/management/automations', 'Автоматизации', 'automations'],
   ]) {
+    await scenario(name + '-mobile', async () => {
     await page.goto(origin + path);
     await visible(page.getByRole('heading', { name: title, exact: true }));
     if (name === 'limiter') {
@@ -288,16 +316,19 @@ try {
     }
     if (name === 'cloudflare') {
       await page.getByRole('button', { name: /example\.com/ }).click();
-      await visible(page.getByText('vpn.example.com', { exact: true }).first());
+      await visible(page.getByText('vpn.example.com', { exact: true }).filter({ visible: true }));
     }
     if (name === 'limiter-settings') await visible(page.getByRole('combobox', { name: 'Режим', exact: true }));
-    if (name === 'cloudflare-settings') await visible(page.getByText('Третий аккаунт', { exact: true }));
+    if (name === 'cloudflare-settings') await visible(page.getByText('Основные домены', { exact: true }));
     if (name === 'automations') await visible(page.getByText('Резервный IP домена', { exact: true }));
     await noHorizontalOverflow(); await capture(name + '-mobile', name === 'limiter' ? checkExpandedLimiterEvent : undefined);
+    });
   }
+  const passed = failures.length === 0 && unexpected.length === 0 && pageErrors.length === 0;
+  await writeFile(join(output, 'report.json'), JSON.stringify({ status: passed ? 'passed' : 'failed', scenarios, failures, syntheticApi: true, desktop: [1440, 1100], mobile: [390, 844], calls: calls.map(({ pathname, method }) => ({ pathname, method })), pageErrors, unexpected }, null, 2));
+  assert.deepEqual(failures.map(failure => failure.name), [], 'UI scenarios failed; see per-scenario artifacts');
   assert.deepEqual(unexpected, [], 'Unexpected API/external requests');
   assert.deepEqual(pageErrors, [], 'Uncaught frontend errors');
-  await writeFile(join(output, 'report.json'), JSON.stringify({ status: 'passed', syntheticApi: true, desktop: [1440, 1100], mobile: [390, 844], calls: calls.map(({ pathname, method }) => ({ pathname, method })), pageErrors, unexpected }, null, 2));
   console.log('PASS production frontend: Limiter evidence/actions/settings, Cloudflare accounts/record IP, automation builder/preview/run/history, Recap and desktop/mobile');
 } catch (error) {
   await capture('failure').catch(() => {});
