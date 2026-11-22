@@ -6,7 +6,7 @@ import { instance } from '@shared/api/axios'
 import { nodeOptionLabel, type NodeOptionData } from '@shared/utils/misc/node-option-label'
 
 type Rule={id:string;node_uuid:string;node_name:string;name:string;enabled:boolean;drop_percent:number;min_online:number;duration_minutes:number;cooldown_minutes:number;actions:Action[];last_run_at:string|null}
-type Action={type:'dpi_check';hosts:string[];location:string}|{type:'hide_hosts';hosts:string[]}|{type:'rotate_ip'}|{type:'webhook';url:string}
+type Action={type:'dpi_check';hosts:string[];location:string}|{type:'hide_hosts';hosts:string[]}|{type:'rotate_ip';updateCloudflare?:boolean}|{type:'webhook';url:string}
 type Node=NodeOptionData
 type Host={uuid:string;remark:string}
 type Execution={id:string;node_uuid:string;name:string;status:string;started_at:string;details:unknown}
@@ -14,12 +14,13 @@ const api='/api/node-automations'
 export function AutomationsPage(){
  const [rules,setRules]=useState<Rule[]>([]),[executions,setExecutions]=useState<Execution[]>([]),[nodes,setNodes]=useState<Node[]>([]),[hosts,setHosts]=useState<Host[]>([])
  const [nodeUuid,setNodeUuid]=useState<string|null>(null),[name,setName]=useState(''),[enabled,setEnabled]=useState(true),[drop,setDrop]=useState<number|string>(50),[minOnline,setMinOnline]=useState<number|string>(5),[duration,setDuration]=useState<number|string>(5),[cooldown,setCooldown]=useState<number|string>(60)
+ const [syncCloudflare,setSyncCloudflare]=useState(false)
  const [actions,setActions]=useState<string[]>(['dpi_check']),[selectedHosts,setSelectedHosts]=useState<string[]>([]),[location,setLocation]=useState<string|null>('russia'),[webhook,setWebhook]=useState('')
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('')
  const refresh=useCallback(async()=>{const [r,e]=await Promise.all([instance.get(api),instance.get(`${api}/executions`)]);setRules(r.data.response);setExecutions(e.data.response)},[])
  useEffect(()=>{void Promise.all([refresh(),instance.get('/api/nodes'),instance.get('/api/hosts')]).then(([,n,h])=>{setNodes(n.data.response);setHosts(h.data.response)}).catch(()=>setError('Не удалось загрузить данные автоматизаций'))},[refresh])
  const create=async()=>{setError('');setMessage('');setBusy(true);try{
-   const enabledActions:Action[]=actions.map(type=>type==='dpi_check'?{type:'dpi_check',hosts:selectedHosts,location:location??'russia'}:type==='hide_hosts'?{type:'hide_hosts',hosts:selectedHosts}:type==='webhook'?{type:'webhook',url:webhook}:{type:'rotate_ip'})
+   const enabledActions:Action[]=actions.map(type=>type==='dpi_check'?{type:'dpi_check',hosts:selectedHosts,location:location??'russia'}:type==='hide_hosts'?{type:'hide_hosts',hosts:selectedHosts}:type==='webhook'?{type:'webhook',url:webhook}:{type:'rotate_ip',updateCloudflare:syncCloudflare})
    await instance.post(api,{node_uuid:nodeUuid,name,enabled,drop_percent:Number(drop),min_online:Number(minOnline),duration_minutes:Number(duration),cooldown_minutes:Number(cooldown),actions:enabledActions});
    setName('');setMessage('Правило сохранено. Срабатывания появятся в истории.');await refresh()
  }catch(e){setError((e as {response?:{data?:{message?:string}}}).response?.data?.message??'Ошибка создания правила')}finally{setBusy(false)}}
@@ -32,6 +33,9 @@ export function AutomationsPage(){
  <SimpleGrid cols={{base:1,sm:2,lg:4}}><NumberInput label="Падение онлайна, %" min={1} max={100} allowDecimal={false} value={drop} onChange={setDrop}/><NumberInput label="Минимальный исходный онлайн" min={0} value={minOnline} onChange={setMinOnline}/><NumberInput label="Подтверждение, минут" min={1} max={1440} value={duration} onChange={setDuration}/><NumberInput label="Пауза между срабатываниями, минут" min={1} max={10080} value={cooldown} onChange={setCooldown}/></SimpleGrid>
  <Text size="sm" c="dimmed">Если онлайн упал относительно среднего за предыдущие 5–30 минут и не восстановился в течение указанного времени, выполняются выбранные действия. При отсутствии метрик срабатывание не создаётся. Автоматическая DPI-проверка платная; по умолчанию установлен серверный лимит $1 за запуск.</Text>
  <MultiSelect label="Действия (одно или несколько)" description="Последовательность выполнения: DPI → смена IP → скрытие хостов → вебхук" data={[{value:'dpi_check',label:'Проверить через DPI Checker'},{value:'rotate_ip',label:'Сменить IP'},{value:'hide_hosts',label:'Скрыть хосты'},{value:'webhook',label:'Отправить вебхук'}]} value={actions} onChange={setActions} maxValues={4}/>
+ {actions.includes('rotate_ip')&&<Switch checked={syncCloudflare} onChange={e=>setSyncCloudflare(e.currentTarget.checked)}
+    label="После смены IP обновлять Cloudflare DNS"
+    description="Обновляются только разрешённые зоны Cloudflare и записи A, связанные с хостами выбранной ноды. Старый IP должен совпадать."/>}
  {(actions.includes('dpi_check')||actions.includes('hide_hosts'))&&<MultiSelect label="Хосты, на которые действуют правила" data={hosts.map(h=>({value:h.uuid,label:h.remark}))} value={selectedHosts} onChange={setSelectedHosts} searchable maxValues={20}/>}
  {actions.includes('dpi_check')&&<Select label="Регион DPI Checker" data={[{value:'russia',label:'Россия'},{value:'russia_mobile',label:'Россия: мобильные сети'},{value:'china',label:'Китай'},{value:'iran',label:'Иран'},{value:'turkmenistan',label:'Туркменистан'}]} value={location} onChange={setLocation} allowDeselect={false}/>}
  {actions.includes('webhook')&&<TextInput label="HTTPS вебхук" type="url" value={webhook} onChange={e=>setWebhook(e.currentTarget.value)} placeholder="https://example.com/webhook"/>}
