@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@common/database/prisma.service';
 import { isIP } from 'node:net';
+import { LimiterCredentialsService } from './limiter-credentials.service';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 export type LimiterSettings = {
@@ -64,7 +65,7 @@ function normalizeSettings(input:unknown):LimiterSettings{
 
 @Injectable()
 export class LimiterService {
- constructor(private readonly db:PrismaService){}
+ constructor(private readonly db:PrismaService,private readonly credentials:LimiterCredentialsService){}
  async settings(){
    const rows=await this.db.$queryRaw<Array<{config:Partial<LimiterSettings>;last_scan_at:Date|null;last_error:string|null}>>`
      SELECT config,last_scan_at,last_error FROM limiter_settings WHERE id=1`;
@@ -97,6 +98,7 @@ export class LimiterService {
  }
  async runtimeConfig(){
    const cfg=(await this.settings()).response;
+   const credentials=await this.credentials.get();
    const users=await this.db.users.findMany({where:{uuid:{in:cfg.ignoredUsers}},select:{tId:true}});
    const env:Record<string,string>={
      ACTION_MODE:cfg.mode,CHECK_INTERVAL:String(cfg.checkIntervalSeconds),
@@ -116,6 +118,11 @@ export class LimiterService {
      TRAFFIC_IGNORED_NODE_UUIDS:cfg.trafficIgnoredNodes.join(','),
      IP_WHITELIST:cfg.ignoredIps.join(','),
    };
+   if(credentials.telegramBotToken)env.TELEGRAM_BOT_TOKEN=credentials.telegramBotToken;
+   if(credentials.telegramChatId)env.TELEGRAM_CHAT_ID=credentials.telegramChatId;
+   if(credentials.telegramAdminIds)env.TELEGRAM_ADMIN_IDS=credentials.telegramAdminIds;
+   if(credentials.maxmindLicenseKey)env.MAXMIND_LICENSE_KEY=credentials.maxmindLicenseKey;
+   env.SHARED_HWID_SQUAD_UUIDS=(credentials.sharedHwidSquadUuids??[]).join(',');
    return {response:{enabled:cfg.enabled,version:'5.1.0',env}};
  }
  async heartbeat(error?:string){
