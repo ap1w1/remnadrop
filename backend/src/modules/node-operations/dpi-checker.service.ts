@@ -103,7 +103,7 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     ]);
     return {response:{nodes,hosts}};
   }
-  async list(){return {response:await this.db.$queryRaw`SELECT id,remote_id,host_uuids,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,created_at,updated_at FROM dpi_check_jobs ORDER BY created_at DESC LIMIT 100`};}
+  async list(){return {response:await this.db.$queryRaw`SELECT id,remote_id,host_uuids,node_uuid,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,created_at,updated_at FROM dpi_check_jobs ORDER BY created_at DESC LIMIT 100`};}
   async one(id:string){const rows=await this.db.$queryRaw<any[]>`SELECT id,remote_id,host_uuids,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,results,remote_response,created_at,updated_at FROM dpi_check_jobs WHERE id=${id}::uuid`;
     if(!rows.length)throw new NotFoundException();return {response:rows[0]};}
   private async job(id:string){const rows=await this.db.$queryRaw<Job[]>`SELECT * FROM dpi_check_jobs WHERE id=${id}::uuid`;if(!rows.length)throw new NotFoundException();return rows[0];}
@@ -124,10 +124,17 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     if(links.length!==selected.length)throw new BadRequestException('Every selected host must produce exactly one VLESS link');
     return links;
   }
-  async prepare(input:{hosts:string[];location:DpiLocation;pop_ids?:number[]}){
+  async prepare(input:{hosts:string[];location:DpiLocation;pop_ids?:number[];node_uuid?:string|null}){
     await this.credentials.getKey();this.validateLocation(input.location);
     if(!Array.isArray(input.hosts)||!input.hosts.length||input.hosts.length>100||input.hosts.some(x=>!uuidPattern.test(x)))throw new BadRequestException('Select 1–100 hosts');
     const selected=[...new Set(input.hosts)];
+    if(input.node_uuid && !uuidPattern.test(input.node_uuid))throw new BadRequestException('Некорректная нода для DPI');
+    if(input.node_uuid){
+      const links=await this.db.$queryRaw<{host_uuid:string}[]>`SELECT host_uuid FROM hosts_to_nodes
+        WHERE node_uuid=${input.node_uuid}::uuid AND host_uuid=ANY(${selected}::uuid[])`;
+      if(new Set(links.map(link=>link.host_uuid)).size!==selected.length)
+        throw new BadRequestException('Некоторые хосты не связаны с выбранной нодой');
+    }
     const hosts=await this.db.hosts.findMany({where:{uuid:{in:selected},isDisabled:false},select:{uuid:true,configProfileInboundUuid:true}});
     if(hosts.length!==selected.length||hosts.some(h=>!h.configProfileInboundUuid))throw new BadRequestException('Some hosts are disabled, missing, or do not have an inbound');
     // Keep this as a definite array: optional input must never leak into Job or SQL.
@@ -164,7 +171,7 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
       const job={id,user_uuid:temporaryUserUuid,host_uuids:selected,location:input.location,pop_ids:pops,status:'prepared',remote_id:null,estimated_cost:null,created_at:new Date()};
       const keys=await this.keys(job);
       const estimate=await this.api('/checks/estimate',{method:'POST',body:JSON.stringify({check_type:'vpn',location:input.location,pop_ids:pops,keys})});
-      await this.db.$executeRaw`INSERT INTO dpi_check_jobs(id,user_uuid,host_uuids,location,pop_ids,status,estimated_cost,progress_total) VALUES (${id}::uuid,${temporaryUserUuid}::uuid,${selected}::uuid[],${input.location},${pops}::int[],'prepared',${Number(estimate.estimated_cost ?? 0)},${pops.length*keys.length})`;
+      await this.db.$executeRaw`INSERT INTO dpi_check_jobs(id,user_uuid,host_uuids,node_uuid,location,pop_ids,status,estimated_cost,progress_total) VALUES (${id}::uuid,${temporaryUserUuid}::uuid,${selected}::uuid[],${input.node_uuid??null}::uuid,${input.location},${pops}::int[],'prepared',${Number(estimate.estimated_cost ?? 0)},${pops.length*keys.length})`;
       return {response:{id,hosts:selected.length,keys:keys.length,points:pops.length,estimate}};
     }catch(error){
       if(temporaryUserUuid)await this.users.deleteUser(temporaryUserUuid);
