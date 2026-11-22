@@ -1,0 +1,33 @@
+name: Integrations QA
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'Dockerfile.dev'
+      - '.github/workflows/integrations-qa.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: TypeScript + Vite + NestJS Docker build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build without touching any database
+        run: |
+          docker build --progress=plain -f Dockerfile.dev -t remnadrop-integrations-qa .
+      - name: Check migrations packaged
+        run: |
+          docker run --rm --network none --entrypoint sh remnadrop-integrations-qa -ec '
+            test -s /app/prisma/migrations/20261122000100_integrations_limiter_cloudflare/migration.sql
+            test -f /app/frontend/index.html
+          '
+      - name: Agent unit tests
+        run: |
+          python3 -m unittest discover -s backup-agent -p 'test*.py' -v
