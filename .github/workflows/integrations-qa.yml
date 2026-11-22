@@ -9,6 +9,9 @@ on:
       - 'integrations/**'
       - 'tests/**'
       - 'scripts/compose-files.py'
+      - 'scripts/patch-limiter.py'
+      - 'scripts/fetch-editor-assets.mjs'
+      - 'editor-assets.lock.json'
       - 'migrate-2.8.1.sh'
       - 'upgrade-fork.sh'
       - '.github/workflows/integrations-qa.yml'
@@ -21,8 +24,8 @@ concurrency:
 jobs:
   build:
     name: Build, upgrade and integration checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
     permissions:
       contents: read
     steps:
@@ -37,28 +40,65 @@ jobs:
           sudo python3 -m unittest discover -s tests -v
           node --test tests/limiter-runtime.cjs
       - name: Build application image
+        id: image
         run: |
           docker build --progress=plain -f Dockerfile.dev -t remnadrop-integrations-qa .
       - name: Check features packaged in the final image
+        id: package
         run: |
           docker run --rm --network none --entrypoint sh remnadrop-integrations-qa -ec '
             test -s /app/prisma/migrations/20261122000100_integrations_limiter_cloudflare/migration.sql
+            test -s /app/prisma/migrations/20261122220000_limiter_events/migration.sql
+            test -s /app/prisma/migrations/20261122221000_cloudflare_accounts/migration.sql
+            test -s /app/prisma/migrations/20261122222000_automation_workflows/migration.sql
             test -f /app/frontend/index.html
+            test -s /app/frontend/assets/wasm_exec.js
+            test -s /app/frontend/assets/main.wasm
+            test -s /app/frontend/assets/xray.schema.json
+            test -s /app/frontend/assets/xray.schema.cn.json
             test -x /usr/local/bin/remnawave-limiter
             test -s /etc/ssl/certs/ca-certificates.crt
             grep -RqlF "/dashboard/tools/limiter" /app/frontend
             grep -RqlF "/dashboard/tools/cloudflare-dns" /app/frontend
           '
-      - name: Signed webhook, bridge and DNS authorization tests
+      - name: Integration, authorization and workflow regression tests
         run: |
           docker run --rm --network none \
             -v "$PWD/tests/integrations:/checks:ro" \
-            --entrypoint node remnadrop-integrations-qa --test \
-            /checks/limiter-http.test.cjs /checks/cloudflare-safeguards.test.cjs
+            --entrypoint sh remnadrop-integrations-qa -ec 'node --test /checks/*.test.cjs'
       - name: Upgrade test database and check application API
+        if: ${{ always() && !cancelled() && steps.package.outcome == 'success' }}
         run: |
           bash tests/integrations/database-smoke.sh remnadrop-integrations-qa
       - name: Agent unit tests
         run: |
           python3 -m unittest discover -s backup-agent -p 'test*.py' -v
+      - name: Render production UI and exercise desktop and mobile workflows
+        id: ui
+        if: ${{ always() && !cancelled() && steps.package.outcome == 'success' }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/remnadrop-ui-qa" --no-save playwright@1.57.0
+          "$RUNNER_TEMP/remnadrop-ui-qa/node_modules/.bin/playwright" install --with-deps chromium
+          mkdir -p artifacts/frontend artifacts/ui
+          container=$(docker create remnadrop-integrations-qa)
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          docker cp "$container:/app/frontend/." artifacts/frontend/
+          REMNADROP_PLAYWRIGHT_MODULE="$RUNNER_TEMP/remnadrop-ui-qa/node_modules/playwright/index.mjs" \
+            node tests/integrations/ui-smoke.mjs
+      - name: Upload UI screenshots and verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-ui-proof
+          path: artifacts/ui/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload production UI bundle after a browser failure
+        if: ${{ always() && !cancelled() && steps.ui.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-ui-bundle
+          path: artifacts/frontend/
+          if-no-files-found: ignore
+          retention-days: 1
 

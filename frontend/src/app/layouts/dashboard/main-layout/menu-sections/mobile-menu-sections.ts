@@ -151,6 +151,38 @@ export const useMobileMenuSections = (): MenuItem[] => {
             ]
         },
         {
+            header: t('constants.tools'),
+            id: 'tools',
+            section: [
+                { name: 'Limiter', id: 'limiter', href: ROUTES.DASHBOARD.TOOLS.LIMITER, icon: TbShieldCheck },
+                { name: 'Cloudflare DNS', id: 'cloudflare-dns', href: ROUTES.DASHBOARD.TOOLS.CLOUDFLARE_DNS, icon: TbCloud },
+                {
+                    name: t('constants.hwid-inspector'),
+                    href: ROUTES.DASHBOARD.TOOLS.HWID_INSPECTOR,
+                    icon: TbDeviceAnalytics,
+                    id: 'hwid-inspector'
+                },
+                {
+                    name: t('constants.srh-inspector'),
+                    href: ROUTES.DASHBOARD.TOOLS.SRH_INSPECTOR,
+                    icon: TbReportAnalytics,
+                    id: 'srh-inspector'
+                },
+                {
+                    name: t('constants.tb-reports'),
+                    href: ROUTES.DASHBOARD.TOOLS.TORRENT_BLOCKER_REPORTS,
+                    icon: TbFlame,
+                    id: 'torrent-blocker-reports'
+                },
+                {
+                    name: t('constants.sessions-explorer'),
+                    href: ROUTES.DASHBOARD.TOOLS.SESSIONS_EXPLORER,
+                    icon: TbRadar2,
+                    id: 'sessions-explorer'
+                }
+            ]
+        },
+        {
             header: t('constants.subscription'),
             id: 'subscription',
             section: [
@@ -226,38 +258,6 @@ export const useMobileMenuSections = (): MenuItem[] => {
                     id: 'subscription-page'
                 }
             ]
-        },
-        {
-            header: t('constants.tools'),
-            id: 'tools',
-            section: [
-                { name: 'Limiter', id: 'limiter', href: ROUTES.DASHBOARD.TOOLS.LIMITER, icon: TbShieldCheck },
-                { name: 'Cloudflare DNS', id: 'cloudflare-dns', href: ROUTES.DASHBOARD.TOOLS.CLOUDFLARE_DNS, icon: TbCloud },
-                {
-                    name: t('constants.hwid-inspector'),
-                    href: ROUTES.DASHBOARD.TOOLS.HWID_INSPECTOR,
-                    icon: TbDeviceAnalytics,
-                    id: 'hwid-inspector'
-                },
-                {
-                    name: t('constants.srh-inspector'),
-                    href: ROUTES.DASHBOARD.TOOLS.SRH_INSPECTOR,
-                    icon: TbReportAnalytics,
-                    id: 'srh-inspector'
-                },
-                {
-                    name: t('constants.tb-reports'),
-                    href: ROUTES.DASHBOARD.TOOLS.TORRENT_BLOCKER_REPORTS,
-                    icon: TbFlame,
-                    id: 'torrent-blocker-reports'
-                },
-                {
-                    name: t('constants.sessions-explorer'),
-                    href: ROUTES.DASHBOARD.TOOLS.SESSIONS_EXPLORER,
-                    icon: TbRadar2,
-                    id: 'sessions-explorer'
-                }
-            ]
         }
     ]
 
@@ -287,3 +287,4 @@ export const useMobileMenuSections = (): MenuItem[] => {
 
     return menuSections
 }
+

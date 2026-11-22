@@ -11,6 +11,7 @@ const load = createSourceLoader({
   },
 });
 const { CloudflareDnsService } = load('src/modules/node-operations/cloudflare-dns.service.ts');
+const ACCOUNT = '00000000-0000-4000-8000-000000000001';
 const ZONE = 'a'.repeat(32);
 const RECORD = 'b'.repeat(32);
 const HOST = '11111111-1111-4111-8111-111111111111';
@@ -23,12 +24,14 @@ function fixture(t, options = {}) {
   const calls = [];
   const record = { id: RECORD, type: 'A', name: 'vpn.example.com', content: OLD_IP, ttl: 300, proxied: true };
   const hosts = options.hosts || [{ host_uuid: HOST, remark: 'FR', address: 'unrelated.example.net', node_uuid: NODE, node_name: 'FR-1' }];
-  const mappings = options.mappings || [{ host_uuid: HOST, zone_id: ZONE, record_id: RECORD }];
+  const mappings = (options.mappings || [{ host_uuid: HOST, zone_id: ZONE, record_id: RECORD }])
+    .map(mapping => ({ account_id: ACCOUNT, ...mapping }));
   const databaseWrites = [];
   const db = {
     $queryRaw: async strings => {
       const query = strings.join('?');
       if (query.includes('FROM cf_dns_credentials')) return [];
+      if (query.includes('FROM cf_dns_accounts')) return [];
       if (query.includes('FROM hosts h')) return hosts;
       if (query.includes('FROM cf_dns_record_host_links')) return mappings;
       if (query.includes('FROM cf_dns_zone_bindings')) return [];
@@ -57,7 +60,9 @@ function fixture(t, options = {}) {
     const expectedPath = '/zones/' + ZONE + '/dns_records/' + RECORD;
     const pathname = new URL(url).pathname.replace('/client/v4', '');
     let result;
-    if (pathname === expectedPath && method === 'GET') {
+    if (pathname === '/zones/' + ZONE && method === 'GET') {
+      result = {id:ZONE,name:'example.com',status:'active'};
+    } else if (pathname === expectedPath && method === 'GET') {
       recordReads += 1;
       result = recordReads > 1 && options.changedFinalRecord ? { ...record, ...options.changedFinalRecord } : record;
     } else if (pathname === '/zones/' + ZONE + '/dns_records' && method === 'GET') {
@@ -75,6 +80,12 @@ test('DNS replacement requires both zone and record of the explicit mapping', as
   const f = fixture(t, { mappings: [{ host_uuid: HOST, zone_id: 'c'.repeat(32), record_id: RECORD }] });
   await assert.rejects(f.service.replaceIp(f.input), error => error.getStatus() === 409);
   assert.equal(f.calls.filter(call => call.method === 'PATCH').length, 0);
+});
+
+test('DNS rotation never uses an explicit mapping from another account', async t => {
+  const f = fixture(t, { mappings: [{ account_id:'99999999-9999-4999-8999-999999999999',host_uuid:HOST,zone_id:ZONE,record_id:RECORD }] });
+  await assert.rejects(f.service.replaceIp(f.input), error => error.getStatus() === 409);
+  assert.equal(f.calls.filter(call => call.method === 'PATCH').length,0);
 });
 
 test('DNS shared by another active node is not rewritten', async t => {
@@ -126,4 +137,9 @@ test('Cloudflare API role can replace DNS only with the declared hosts write sco
   }
   assert.throws(() => roles.canActivate(context('update', ['*'])));
   assert.throws(() => roles.canActivate(context('bind', ['*'])));
+  assert.equal(roles.canActivate(context('replaceRecord',['hosts:cloudflare-record-write'])),true);
+  assert.equal(scopes.canActivate(context('replaceRecord',['hosts:cloudflare-record-write'])),true);
+  assert.equal(scopes.canActivate(context('replaceRecord',['hosts:cloudflare-replace-ip'])),false);
+  assert.throws(() => roles.canActivate(context('addAccount',['*'])));
+  assert.throws(() => roles.canActivate(context('deleteAccount',['*'])));
 });

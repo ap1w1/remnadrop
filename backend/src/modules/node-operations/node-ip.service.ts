@@ -68,7 +68,7 @@ export class NodeIpService {
      const oldIp=current[0].ip;
      const shared=await tx.$queryRaw<{count:bigint}[]>`SELECT count(*)::bigint AS count FROM hosts h JOIN hosts_to_nodes hn ON hn.host_uuid=h.uuid WHERE hn.node_uuid=${nodeUuid}::uuid AND h.address=${oldIp} AND (SELECT count(*) FROM hosts_to_nodes x WHERE x.host_uuid=h.uuid)>1`;
      if(shared[0]?.count)throw new ConflictException('Cannot rotate a shared host: split its host entry between nodes first');
-     const count=await tx.$executeRaw`UPDATE hosts h SET address=${target.ip},updated_at=now() FROM hosts_to_nodes hn WHERE hn.host_uuid=h.uuid AND hn.node_uuid=${nodeUuid}::uuid AND h.address=${oldIp}`;
+     const count=await tx.$executeRaw`UPDATE hosts h SET address=${target.ip} FROM hosts_to_nodes hn WHERE hn.host_uuid=h.uuid AND hn.node_uuid=${nodeUuid}::uuid AND h.address=${oldIp}`;
      if(count===0)throw new ConflictException('No associated hosts use the active IP; update host addresses manually before rotation');
      // Carry periodic schedule across rotations; otherwise it stops after one cycle.
      const oldInterval=await tx.$queryRaw<{rotation_minutes:number|null}[]>`SELECT rotation_minutes FROM node_ip_pool WHERE node_uuid=${nodeUuid}::uuid AND is_active`;
@@ -86,3 +86,4 @@ export class NodeIpService {
    throw lastError??new ConflictException('No candidate IP is reachable');
  }
 }
+

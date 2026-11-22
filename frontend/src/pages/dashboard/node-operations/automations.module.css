@@ -1,0 +1,98 @@
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+.toolbar {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) 200px 200px;
+    gap: 12px;
+}
+.rule {
+    border-left: 3px solid var(--mantine-color-blue-5);
+}
+.paused {
+    border-left-color: var(--mantine-color-gray-5);
+}
+.ruleBody {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: start;
+}
+.pipeline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 16px;
+}
+.pipeline > * {
+    max-width: 100%;
+    min-width: 0;
+}
+.step {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--mantine-color-default-border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: var(--mantine-font-size-sm);
+}
+.stepIndex {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: var(--mantine-primary-color-light);
+    color: var(--mantine-primary-color-light-color);
+    font-size: 12px;
+    font-weight: 600;
+}
+.template {
+    height: 100%;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--mantine-color-default-border);
+    background: var(--mantine-color-body);
+    transition: border-color 120ms, background 120ms;
+    text-align: left;
+}
+.template:hover {
+    border-color: var(--mantine-primary-color-filled);
+    background: var(--mantine-primary-color-light);
+}
+.template:focus-visible {
+    outline: 2px solid var(--mantine-primary-color-filled);
+    outline-offset: 3px;
+}
+.stickyFooter {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: 24px -16px -16px;
+    padding: 16px;
+    border-top: 1px solid var(--mantine-color-default-border);
+    background: var(--mantine-color-body);
+}
+.detailMessage {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+@media (max-width: 48em) {
+    .toolbar { grid-template-columns: 1fr; }
+    .ruleBody { grid-template-columns: 1fr; }
+    .header > * { max-width: 100%; }
+    .pipeline { gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .template { transition: none; }
+}
