@@ -91,6 +91,9 @@ function fromOverrides(base:LimiterSettings,values:Record<string,string>):Limite
  }
  return normalizeSettings(merged);
 }
+function mirroredSettings(settings:LimiterSettings):Partial<LimiterSettings>{
+ return Object.fromEntries(Object.values(editable).map(key=>[key,settings[key]]));
+}
 function object(value:unknown):Record<string,unknown> {
  return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
 }
@@ -117,8 +120,31 @@ type EventRow={id:string;user_uuid:string|null;user_id:string|null;username:stri
 
 @Injectable()
 export class LimiterService {
+ private lifecycle:Promise<void>=Promise.resolve();
  constructor(private readonly db:PrismaService,private readonly credentials:LimiterCredentialsService,
   private readonly secrets:LimiterBridgeSecretsService,private readonly control:LimiterControlService){}
+ private async serialized<T>(operation:()=>Promise<T>):Promise<T>{
+   const previous=this.lifecycle;let release:()=>void=()=>{};
+   this.lifecycle=new Promise<void>(resolve=>{release=resolve});
+   await previous;
+   try{return await operation();}finally{release();}
+ }
+ async withRuntimeChange<T>(operation:()=>Promise<T>):Promise<T>{return this.serialized(operation);}
+ // Runtime admission and saved enabled state change under the same process lock.
+ async activateStartup(){return this.serialized(async()=>{
+   const cfg=(await this.settings()).response,health=await this.control.health();
+   if(cfg.enabled&&health?.pauseReason)await this.control.resume();
+   return this.control.health();
+ });}
+ async pauseForStop(engineRunning:boolean,stop:()=>Promise<void>){return this.serialized(async()=>{
+   if((await this.settings()).response.enabled)return null;
+   const paused=engineRunning||this.control.isProcessExpected()||await this.control.health()
+     ?await this.control.pause():{paused:true,pendingRestores:await this.control.pendingRestores()};
+   // Keep the lifecycle lock through process exit so a concurrent enable/save
+   // cannot reopen admission between the drained queue check and SIGTERM.
+   if(paused.pendingRestores===0)await stop();
+   return paused;
+ });}
  async settings(){
    const rows=await this.db.$queryRaw<Array<{config:Partial<LimiterSettings>;last_scan_at:Date|null;last_error:string|null}>>`
      SELECT config,last_scan_at,last_error FROM limiter_settings WHERE id=1`;
@@ -127,14 +153,26 @@ export class LimiterService {
    try{cfg=fromOverrides(cfg,await this.control.overrides());}catch{}
    return {response:{...cfg,lastScanAt:rows[0]?.last_scan_at??null,lastError:rows[0]?.last_error??null,engineVersion:'5.1.0'}};
  }
- async update(input:unknown){
+ async update(input:unknown){return this.serialized(()=>this.updateSettings(input));}
+ private async updateSettings(input:unknown){
    const {lastScanAt,lastError,engineVersion,...current}=(await this.settings()).response;
    if(!input||typeof input!=='object'||Array.isArray(input))throw new BadRequestException('Invalid limiter settings');
    const settings=normalizeSettings({...current,...input});
-   if(current.enabled&&!settings.enabled&&await this.control.pendingRestores()>0)
-     throw new BadRequestException('Есть временные блокировки. Сначала включите этих пользователей или дождитесь окончания срока.');
-   await this.control.applySettings(toOverrides(settings));
-   await this.db.$executeRaw`UPDATE limiter_settings SET config=${JSON.stringify(settings)}::jsonb,updated_at=now() WHERE id=1`;
+   let pauseAttempted=false;
+   try{
+     if(current.enabled&&!settings.enabled){
+       const health=await this.control.health();
+       pauseAttempted=this.control.isProcessExpected()||health!==null;
+       const pending=pauseAttempted?(await this.control.pause()).pendingRestores:await this.control.pendingRestores();
+       if(pending>0)throw new BadRequestException('Есть временные блокировки. Сначала включите этих пользователей или дождитесь окончания срока.');
+     }
+     await this.control.applySettings(toOverrides(settings));
+     await this.db.$executeRaw`UPDATE limiter_settings SET config=${JSON.stringify(settings)}::jsonb,updated_at=now() WHERE id=1`;
+   }catch(error){
+     if(pauseAttempted)try{await this.control.resume();}catch{}
+     throw error;
+   }
+   if(settings.enabled&&await this.control.health())await this.control.resume();
    return this.settings();
  }
  async runtimeSettings(){return {response:await this.control.call('GET','/settings')};}
@@ -145,7 +183,7 @@ export class LimiterService {
    const {lastScanAt,lastError,engineVersion,...current}=(await this.settings()).response;
    const values=Object.fromEntries(items.filter(item=>editable[item.Key]).map(item=>[item.Key,item.Display]));
    const settings=fromOverrides(current,values);
-   await this.db.$executeRaw`UPDATE limiter_settings SET config=${JSON.stringify(settings)}::jsonb,updated_at=now() WHERE id=1`;
+   await this.db.$executeRaw`UPDATE limiter_settings SET config=config||${JSON.stringify(mirroredSettings(settings))}::jsonb,updated_at=now() WHERE id=1`;
    return {response:{settings:(await this.settings()).response,items}};
  }
  async events(){
@@ -192,6 +230,8 @@ export class LimiterService {
      throw new BadRequestException('Некорректное действие Limiter');
    if(['disable_temp','ignore_temp'].includes(action)?minutes<1||minutes>525600:minutes!==0)
      throw new BadRequestException('Укажите срок от 1 минуты до 365 дней');
+   if(['disable','disable_temp'].includes(action)&&!(await this.settings()).response.enabled)
+     throw new BadRequestException('Limiter выключен. Новые блокировки недоступны.');
    const user=await this.db.users.findUnique({where:{uuid:userUuid},select:{tId:true,username:true}});
    if(!user)throw new NotFoundException('Пользователь удалён');
    const id=Number(user.tId);
@@ -273,7 +313,7 @@ export class LimiterService {
      for(const item of items)if(editable[item.Key]&&typeof item.Display==='string')overrides[item.Key]=item.Display;
      const {lastScanAt,lastError,engineVersion,...current}=(await this.settings()).response;
      const settings=fromOverrides(current,overrides);
-     await this.db.$executeRaw`UPDATE limiter_settings SET config=${JSON.stringify(settings)}::jsonb,updated_at=now() WHERE id=1`;
+     await this.db.$executeRaw`UPDATE limiter_settings SET config=config||${JSON.stringify(mirroredSettings(settings))}::jsonb,updated_at=now() WHERE id=1`;
      return {response:{accepted:true}};
    }
    const puser=object(payload.user),userId=Number(puser.user_id),hasUser=!['daily_report','update_available'].includes(event);

@@ -22,7 +22,7 @@ function loadSource(filename, names, globals) {
 }
 
 function harness(env = {}, spawnError = null) {
-  const children = [], heartbeats = [], redisClients = [];
+  const children = [], heartbeats = [], redisClients = [], timerDelays=[];
   const config = { enabled: true, mode:'manual', env: {
     ACTION_MODE: 'manual', TELEGRAM_BOT_TOKEN: 'test-token',
     TELEGRAM_CHAT_ID: '123', TELEGRAM_ADMIN_IDS: '123',
@@ -54,7 +54,7 @@ function harness(env = {}, spawnError = null) {
     ['LimiterRunnerService'], {
       Logger, Redis: FakeRedis, createHash, join, resolve, URL, Buffer,
       process: { env }, existsSync: path => files.has(path), mkdirSync() {},
-      setTimeout(fn, delay) { const t = setTimeout(fn, Math.min(delay, 5)); t.unref(); return t; },
+      setTimeout(fn, delay) { timerDelays.push(delay);const t = setTimeout(fn, Math.min(delay, 5)); t.unref(); return t; },
       clearTimeout, setInterval, clearInterval,
       spawn(binary, args, options) {
         const child = new Child(); children.push({ binary, args, options, child });
@@ -63,13 +63,20 @@ function harness(env = {}, spawnError = null) {
       },
     },
   );
-  const control = { socketPath:'/var/lib/remnawave/limiter/control.sock',ready:true,
-    async health(){return this.ready?{ready:true,lastCheck:'2026-11-22T19:00:00.000Z'}:null;} };
+  const control = { socketPath:'/var/lib/remnawave/limiter/control.sock',ready:true,pauseReason:'',pending:0,expected:false,
+    setProcessExpected(value){this.expected=value;},isProcessExpected(){return this.expected;},
+    async health(){return {ready:this.ready,pauseReason:this.pauseReason,lastCheck:'2026-11-22T19:00:00.000Z'};},
+    async pause(){this.ready=false;this.pauseReason='stopping';return {paused:true,pendingRestores:this.pending};},
+    async resume(){this.ready=true;this.pauseReason='';},
+  };
   const runner = new LimiterRunnerService({
     async runtimeConfig() { return { response: config }; },
     async heartbeat(reason) { heartbeats.push(reason); },
+    async pauseForStop(_running,stop){if(config.enabled)return null;const paused=await control.pause();if(paused.pendingRestores===0)await stop();return paused;},
+    async activateStartup(){if(config.enabled)await control.resume();return control.health();},
+    async withRuntimeChange(operation){return operation();},
   }, { apiToken: 'internal-bearer', webhookSecret: 'internal-hmac', controlToken:'internal-control' },control);
-  return { runner, config, children, heartbeats, redisClients, redisState, files,control };
+  return { runner, config, children, heartbeats, redisClients, redisState, files,control,timerDelays };
 }
 
 test('TCP transport uses panel host/port/password with isolated DB 8', async () => {
@@ -169,7 +176,7 @@ test('disabling the configured engine stops the existing child', async () => {
 });
 
 for (const key of ['TELEGRAM_CHAT_ID', 'TELEGRAM_ADMIN_IDS']) {
-  test('deleting ' + key + ' stops the old child before reporting the error', async () => {
+  test('an invalid partial Telegram config is rejected without killing the current restoration process: ' + key, async () => {
     const h = harness({ REDIS_HOST: 'redis', REDIS_PORT: '6379' });
     await h.runner.tick();
     delete h.config.env[key];
@@ -181,10 +188,10 @@ for (const key of ['TELEGRAM_CHAT_ID', 'TELEGRAM_ADMIN_IDS']) {
     await h.runner.tick();
     assert.deepEqual(reports, [{
       reason: 'Укажите Chat ID и Admin IDs для Telegram или отключите Telegram-уведомления',
-      signal: 'SIGTERM', running: false,
+      signal: null, running: true,
     }]);
     assert.equal(h.children.length, 1, 'no replacement starts with missing credentials');
-    assert.equal(h.runner.status().response.running, false);
+    assert.equal(h.runner.status().response.running, true);
   });
 }
 
@@ -210,6 +217,67 @@ test('spawned process is not reported ready before its authenticated control soc
  assert.equal(h.children.length,1);
 });
 
+test('disabled engine drains in-flight restores and keeps recovery running until the queue is empty',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});
+ await h.runner.tick();h.config.enabled=false;h.control.pending=1;
+ await h.runner.tick();
+ assert.equal(h.children[0].child.signalCode,null,'a newly queued temporary restore must not be killed');
+ assert.equal(h.runner.status().response.restoring,true);assert.equal(h.runner.status().response.ready,false);
+ h.control.pending=0;await h.runner.tick();
+ assert.equal(h.children[0].child.signalCode,'SIGTERM');
+ assert.equal(h.runner.status().response.running,false);
+});
+
+test('failed stop barrier never kills the process that owns pending restoration',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});
+ await h.runner.tick();h.config.enabled=false;
+ h.runner.limiter.pauseForStop=async()=>{throw new Error('Redis or pause timeout')};
+ await h.runner.tick();assert.equal(h.children[0].child.signalCode,null);
+ assert.equal(h.runner.status().response.running,true);assert.match(h.heartbeats.at(-1),/безопасно остановить/);
+});
+
+test('disabled Limiter restarts in recovery-only mode after a process restart with queued restores',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});
+ h.config.enabled=false;h.config.mode='auto';h.control.pending=1;
+ await h.runner.tick();
+ assert.equal(h.children.length,1);assert.equal(h.runner.status().response.restoring,true);
+ assert.equal(h.runner.status().response.ready,false);
+ assert.equal(h.control.pauseReason,'stopping');
+});
+
+test('startup is activated only after the service rechecks the latest saved enabled state',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});
+ h.control.ready=false;h.control.pauseReason='startup';
+ h.runner.limiter.activateStartup=async()=>{h.config.enabled=false;return h.control.health()};
+ await h.runner.tick();
+ assert.equal(h.runner.status().response.ready,false);
+ await h.runner.tick();assert.equal(h.children[0].child.signalCode,'SIGTERM');
+});
+
+test('credential or notification restart drains mutations before replacing the child',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});await h.runner.tick();
+ let releasePause,pauseStarted;const entered=new Promise(resolve=>{pauseStarted=resolve});
+ h.control.pause=()=>new Promise(resolve=>{releasePause=()=>resolve({paused:true,pendingRestores:1});pauseStarted()});
+ h.config.env.REMNADROP_TELEGRAM_NOTIFICATIONS='false';const restart=h.runner.tick();await entered;
+ assert.equal(h.children.length,1);assert.equal(h.children[0].child.signalCode,null);
+ releasePause();await restart;
+ assert.equal(h.children[0].child.signalCode,'SIGTERM');assert.equal(h.children.length,2);
+});
+
+test('failed restart drain preserves the old process and retries after recovery',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});await h.runner.tick();
+ const pause=h.control.pause;h.control.pause=async()=>{throw new Error('control unavailable')};
+ h.config.env.REMNADROP_TELEGRAM_NOTIFICATIONS='false';await h.runner.tick();
+ assert.equal(h.children.length,1);assert.equal(h.children[0].child.signalCode,null);assert.equal(h.control.expected,true);
+ h.control.pause=pause;await h.runner.tick();assert.equal(h.children.length,2);
+});
+
+test('an aborted stop with enabled=true resumes through the service on the next health check',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});await h.runner.tick();
+ h.control.pauseReason='stopping';h.control.ready=false;
+ await h.runner.tick();assert.equal(h.control.pauseReason,'');assert.equal(h.runner.status().response.ready,true);
+});
+
 test('shutdown during a Redis probe cannot start a new orphan child', async () => {
   const h = harness({ REDIS_HOST: 'redis', REDIS_PORT: '6379' });
   let finishProbe, probeStarted;
@@ -221,6 +289,28 @@ test('shutdown during a Redis probe cannot start a new orphan child', async () =
   finishProbe();
   await tick;
   assert.equal(h.children.length, 0);
+});
+
+test('application shutdown drains the shared gate before SIGTERM and allows durable queued restores',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});await h.runner.tick();
+ let finishTimer,enteredPause;const entered=new Promise(resolve=>{enteredPause=resolve});
+ h.control.pause=()=>new Promise(resolve=>{finishTimer=()=>resolve({paused:true,pendingRestores:1});enteredPause()});
+ let locked=false;h.runner.limiter.withRuntimeChange=async operation=>{locked=true;try{return await operation()}finally{locked=false}};
+ const originalKill=h.children[0].child.kill.bind(h.children[0].child);
+ h.children[0].child.kill=signal=>{assert.equal(locked,true,'shutdown must hold lifecycle until process exit');return originalKill(signal)};
+ const closing=h.runner.onApplicationShutdown();await entered;
+ assert.equal(h.children[0].child.signalCode,null,'pending timer write must finish before SIGTERM');
+ finishTimer();await closing;
+ assert.equal(h.children[0].child.signalCode,'SIGTERM');assert.equal(h.control.expected,false);
+ assert.ok(h.timerDelays.includes(15000),'shutdown grace exceeds upstream 10-second timer storage timeout');
+});
+
+test('application shutdown retries a bounded pause timeout once then terminates with a bounded grace',async()=>{
+ const h=harness({REDIS_HOST:'redis',REDIS_PORT:'6379'});await h.runner.tick();
+ let attempts=0;h.control.pause=async()=>{attempts++;throw new Error('control timed out')};
+ await h.runner.onApplicationShutdown();
+ assert.equal(attempts,2);assert.equal(h.children[0].child.signalCode,'SIGTERM');
+ assert.ok(h.timerDelays.includes(15000));assert.equal(h.runner.status().response.running,false);
 });
 
 test('settings reject zero cooldown, which upstream 5.1.0 cannot start with', () => {

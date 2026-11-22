@@ -2,7 +2,7 @@
 // Production TypeScript is executed; only database/control/credential boundaries are replaced.
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
-const {readFileSync}=require('node:fs');
+const {readFileSync,existsSync}=require('node:fs');
 const {resolve}=require('node:path');
 const {stripTypeScriptTypes}=require('node:module');
 const {runInNewContext}=require('node:vm');
@@ -12,8 +12,9 @@ class BadRequestException extends Error{}
 class NotFoundException extends Error{}
 class ServiceUnavailableException extends Error{}
 const root=resolve(__dirname,'../..');
+const sourceRoot=existsSync('/app/src/modules/node-operations')?'/app/src/modules/node-operations':resolve(root,'backend/src/modules/node-operations');
 function load(file,names){
- const text=readFileSync(resolve(root,'backend/src/modules/node-operations',file),'utf8')
+ const text=readFileSync(resolve(sourceRoot,file),'utf8')
   .replace(/^import .*;\r?\n/gm,'').replace(/^@Injectable\(\)\r?\n/gm,'').replace(/^export /gm,'');
  const scope={Buffer,process,URL,isIP,...crypto,BadRequestException,NotFoundException,ServiceUnavailableException,module:{exports:{}}};
  runInNewContext(stripTypeScriptTypes(text,{mode:'transform'})+'\nmodule.exports={'+names.join(',')+'};',scope);
@@ -29,7 +30,7 @@ function fixture(config={}){
  const db={users:{findUnique:async()=>({uuid:USER,tId:42n,username:'sample'}),findMany:async()=>[]},
   $queryRaw:async()=>[{config,last_scan_at:null,last_error:null}],
   $executeRaw:async(query,...values)=>{writes.push({sql:query.join('?'),values});return 1;}};
- const control={overrides:async()=>({}),pendingRestores:async()=>0,importLegacyIgnoredUsers:async()=>{},
+ const control={overrides:async()=>({}),pendingRestores:async()=>0,health:async()=>null,isProcessExpected:()=>false,pause:async()=>({paused:true,pendingRestores:0}),resume:async()=>{},importLegacyIgnoredUsers:async()=>{},
   importLegacySettings:async values=>{calls.push({importSettings:values})},
   call:async(method,path,body)=>{calls.push({method,path,body});return {success:true,action:body?.action};},
   applySettings:async values=>{calls.push({settings:values})}};
@@ -81,7 +82,7 @@ test('restore failure and bot actions share the audit without executing another 
 });
 
 test('panel actions resolve the numeric ID on the server and preserve the retry key',async()=>{
- const h=fixture();const response=await h.service.action(USER,{action:'disable_temp',minutes:1440,requestId:REQUEST,userId:999});
+ const h=fixture({enabled:true});const response=await h.service.action(USER,{action:'disable_temp',minutes:1440,requestId:REQUEST,userId:999});
  assert.equal(response.response.success,true);
  assert.equal(h.calls[0].path,'/actions');assert.equal(h.calls[0].body.userId,42);assert.equal(h.calls[0].body.requestId,REQUEST);
  assert.equal(h.calls[0].body.minutes,1440);
@@ -104,10 +105,13 @@ test('successful actions stay successful when audit persistence fails',async()=>
 });
 
 test('a delayed settings webhook reads the current runtime snapshot instead of reverting it',async()=>{
- const h=fixture({cooldownSeconds:300});
+ const h=fixture({cooldownSeconds:300,enabled:true,telegramNotifications:true,ignoredUsers:[USER]});
  h.control.call=async()=>[{Key:'COOLDOWN',Display:'10'}];
  await signed(h.service,{event:'settings_changed',data:{COOLDOWN:'999'}});
  assert.equal(JSON.parse(h.writes[0].values[0]).cooldownSeconds,10);
+ assert.match(h.writes[0].sql,/config=config\|\|/);
+ for(const key of ['enabled','telegramNotifications','ignoredUsers','ignoredNodes','ignoredIps'])
+   assert.equal(Object.hasOwn(JSON.parse(h.writes[0].values[0]),key),false,'delayed mirror must never overwrite '+key);
 });
 
 test('headless runtime keeps factory reset values stable and actual mode separate',async()=>{
@@ -124,6 +128,75 @@ test('disabling Limiter is rejected while temporary restores are pending',async(
  const h=fixture({enabled:true});h.control.pendingRestores=async()=>1;
  await assert.rejects(h.service.update({enabled:false}),/временные блокировки/);
  assert.equal(h.writes.length,0);assert.equal(h.calls.length,0);
+});
+
+test('stop barrier catches a temporary timer written after the stop request began',async()=>{
+ const h=fixture({enabled:true});let resumed=0;
+ h.control.health=async()=>({ready:true,pauseReason:''});
+ h.control.pendingRestores=async()=>0; // A pre-barrier lookup would miss the race.
+ h.control.pause=async()=>({paused:true,pendingRestores:1});
+ h.control.resume=async()=>{resumed++};
+ await assert.rejects(h.service.update({enabled:false}),/временные блокировки/);
+ assert.equal(resumed,1);assert.equal(h.writes.length,0);
+});
+
+test('failed settings apply or database write reopens admission instead of leaving a running limiter paused',async()=>{
+ for(const failed of ['apply','database','pause']){
+  const h=fixture({enabled:true});let resumed=0;
+  h.control.health=async()=>({ready:true});h.control.resume=async()=>{resumed++};
+  if(failed==='apply')h.control.applySettings=async()=>{throw new Error('apply failure')};
+  if(failed==='database')h.db.$executeRaw=async()=>{throw new Error('database failure')};
+  if(failed==='pause')h.control.pause=async()=>{throw new Error('pause timeout')};
+  await assert.rejects(h.service.update({enabled:false}));assert.equal(resumed,1,failed);
+ }
+});
+
+test('startup activation cannot cross an in-progress enabled=false commit',async()=>{
+ const config={enabled:true},h=fixture(config);let writeEntered,finishWrite,resumed=0;
+ const entered=new Promise(resolve=>{writeEntered=resolve});
+ const committed=new Promise(resolve=>{finishWrite=resolve});
+ h.control.health=async()=>({ready:false,pauseReason:'startup'});
+ h.control.resume=async()=>{resumed++};
+ h.db.$executeRaw=async(_query,value)=>{writeEntered();await committed;Object.assign(config,JSON.parse(value));return 1;};
+ const stop=h.service.update({enabled:false});await entered;
+ const activate=h.service.activateStartup();
+ finishWrite();await stop;await activate;
+ assert.equal(config.enabled,false);assert.equal(resumed,0);
+});
+
+test('panel cannot create new disables after the saved enabled flag is false',async()=>{
+ const h=fixture({enabled:false});
+ await assert.rejects(h.service.action(USER,{action:'disable_temp',minutes:1440,requestId:REQUEST}),/выключен/);
+ assert.equal(h.calls.length,0);
+ // Recovery remains available while the disabled engine finishes its queue.
+ assert.equal((await h.service.action(USER,{action:'enable',requestId:REQUEST})).response.success,true);
+});
+
+test('a known running engine with a failed health/pause probe never falls back to a racy Redis count',async()=>{
+ const h=fixture({enabled:false});let stopped=0,lookups=0;
+ h.control.isProcessExpected=()=>true;h.control.pause=async()=>{throw new Error('socket unavailable')};
+ h.control.pendingRestores=async()=>{lookups++;return 0};
+ await assert.rejects(h.service.pauseForStop(true,async()=>{stopped++}),/socket/);
+ assert.equal(stopped,0);assert.equal(lookups,0);
+ const active=fixture({enabled:true});active.control.isProcessExpected=()=>true;
+ active.control.pause=h.control.pause;
+ await assert.rejects(active.service.update({enabled:false}),/socket/);
+ assert.equal(active.writes.length,0,'failed live-engine barrier must not persist disabled');
+});
+
+test('settings cannot resume admission until a drained stop or config replacement has finished',async()=>{
+ for(const operation of ['stop','restart']){
+  const h=fixture({enabled:false});let entered,release,resumes=0;
+  const started=new Promise(resolve=>{entered=resolve});const finished=new Promise(resolve=>{release=resolve});
+  h.control.health=async()=>({ready:false,pauseReason:'stopping'});h.control.resume=async()=>{resumes++};
+  const critical=operation==='stop'
+   ? h.service.pauseForStop(true,async()=>{entered();await finished})
+   : h.service.withRuntimeChange(async()=>{entered();await finished});
+  await started;
+  const enable=h.service.update({enabled:true});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(resumes,0,operation);
+  release();await critical;await enable;assert.equal(resumes,1,operation);
+ }
 });
 
 test('partial secret updates preserve the existing Telegram token and never return it',async t=>{

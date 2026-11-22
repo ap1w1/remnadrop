@@ -58,10 +58,10 @@ export function LimiterPage(){
  const toggle=(id:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);return next})
  const actionsFor=(event:LimiterEvent)=>{
   if(!event.user_uuid)return event.event_type==='update_available'?null:<Text size="xs" c="dimmed">Пользователь удалён. Событие сохранено в истории.</Text>
-  const disabled=!status.ready,uuid=event.user_uuid,name=event.username
+  const disabled=!status.ready||!settings.enabled,uuid=event.user_uuid,name=event.username
   return <Group gap="xs" wrap="wrap">
    {event.user_status==='DISABLED'
-    ? <Button h={44} variant="light" color="teal" disabled={disabled} onClick={()=>openAction(uuid,name,'enable')}>Включить подписку</Button>
+    ? <Button h={44} variant="light" color="teal" disabled={!status.ready&&!(status.restoring&&status.running)} onClick={()=>openAction(uuid,name,'enable')}>Включить подписку</Button>
     : settings.mode==='manual'&&<>
      <Button h={44} variant="light" color="red" disabled={disabled} onClick={()=>openAction(uuid,name,'disable_temp',1440)}>Отключить на 1 день</Button>
      <Button h={44} variant="subtle" color="red" disabled={disabled} onClick={()=>openAction(uuid,name,'disable')}>Отключить навсегда</Button>
@@ -85,6 +85,7 @@ export function LimiterPage(){
   {notice&&<Alert color="teal" withCloseButton onClose={()=>setNotice('')}>{notice}</Alert>}
   {settings.lastError&&<Alert color="orange" title="Требуется внимание">{settings.lastError}</Alert>}
   {!settings.enabled&&!loading&&<Alert color="gray" title="Проверка отключена">История доступна. Чтобы получать новые события и выполнять действия, включите Limiter в настройках.</Alert>}
+  {status.restoring&&<Alert color="blue" title="Завершаются временные блокировки">Новые проверки остановлены. Отключённые на время подписки будут включены в назначенный срок; их также можно включить вручную.</Alert>}
   {settings.enabled&&!status.ready&&!loading&&<Alert color="yellow" title="Limiter ещё не готов">Действия станут доступны после запуска. {settings.lastScanAt?'Последняя проверка: '+dateText(settings.lastScanAt):'Ожидаем первую проверку.'}</Alert>}
   <SimpleGrid cols={{base:2,md:4}} spacing="sm">
    <Card withBorder radius="md" p="md"><Text size="xs" c="dimmed">Нарушений за 24 часа</Text>{loading?<Skeleton h={28} mt={6}/>:<Title order={3} mt={4}>{summary?.live?.violations?.Count24h??summary?.count24h??'—'}</Title>}</Card>

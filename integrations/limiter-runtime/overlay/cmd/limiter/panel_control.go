@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -22,6 +21,7 @@ import (
 	"github.com/remnawave/limiter/internal/api"
 	"github.com/remnawave/limiter/internal/cache"
 	"github.com/remnawave/limiter/internal/config"
+	"github.com/remnawave/limiter/internal/i18n"
 	"github.com/remnawave/limiter/internal/monitor"
 	"github.com/remnawave/limiter/internal/panelbridge"
 	"github.com/remnawave/limiter/internal/settings"
@@ -43,6 +43,7 @@ type panelStore interface {
 	PanelActionResult(context.Context,string)(string,error)
 	SavePanelActionResult(context.Context,string,string,any)error
 	PanelPersistence(context.Context)(bool,error)
+	PanelPendingRestores(context.Context)(int64,error)
 }
 type panelControl struct {
 	token string
@@ -61,14 +62,18 @@ func newPanelActionHandler(original telegram.ActionHandler,c *cache.Cache,cfg *c
 	var mu sync.Mutex
 	return func(ctx context.Context,a telegram.Action)error {
 		mu.Lock();defer mu.Unlock()
+		if a.Name=="disable"||a.Name=="disable_temp" {
+			release,ok:=panelbridge.BeginDisable();if !ok{return errors.New(i18n.T("error.panel.paused"))}
+			defer release()
+		}
 		if a.Name=="disable_temp" {
 			persistent,err:=c.PanelPersistence(ctx)
 			if err!=nil{return err}
-			if !persistent{return fmt.Errorf("Для временной блокировки включите сохранение Redis (AOF или RDB)")}
+			if !persistent{return errors.New(i18n.T("error.panel.temporary_block_persistence"))}
 		}
 		if a.Name=="ignore_temp" {
 			states,err:=c.PanelStates(ctx,[]int64{a.UserID});if err!=nil{return err}
-			if states[strconv.FormatInt(a.UserID,10)].PermanentIgnore{return fmt.Errorf("Сначала уберите постоянное исключение пользователя")}
+			if states[strconv.FormatInt(a.UserID,10)].PermanentIgnore{return errors.New(i18n.T("error.panel.remove_permanent_ignore"))}
 		}
 		var err error
 		if a.Name=="unignore" {err=c.RemoveFromWhitelist(ctx,a.UserID)} else {err=original(ctx,a)}
@@ -88,23 +93,30 @@ func newPanelActionHandler(original telegram.ActionHandler,c *cache.Cache,cfg *c
 func (p *panelControl) ServeHTTP(w http.ResponseWriter,r *http.Request) {
 	w.Header().Set("Content-Type","application/json")
 	w.Header().Set("Cache-Control","no-store")
-	provided:=strings.TrimPrefix(r.Header.Get("Authorization"),"Bearer ")
-	if len(p.token)<32||len(provided)!=len(p.token)||subtle.ConstantTimeCompare([]byte(provided),[]byte(p.token))!=1 {
-		p.fail(w,http.StatusUnauthorized,"Недействительные учётные данные");return
+	authorization:=r.Header.Get("Authorization")
+	provided:=strings.TrimPrefix(authorization,"Bearer ")
+	if !strings.HasPrefix(authorization,"Bearer ")||len(p.token)<32||len(provided)!=len(p.token)||subtle.ConstantTimeCompare([]byte(provided),[]byte(p.token))!=1 {
+		p.fail(w,http.StatusUnauthorized,i18n.T("error.panel.invalid_credentials"));return
 	}
 	ctx,cancel:=context.WithTimeout(r.Context(),25*time.Second);defer cancel()
 	r=r.WithContext(ctx)
 	switch {
 	case r.Method==http.MethodGet&&r.URL.Path=="/health":
-		p.ok(w,map[string]any{"ready":true,"lastCheck":p.lastCheck()})
+		p.ok(w,map[string]any{"ready":!panelbridge.Paused(),"pauseReason":panelbridge.PauseReason(),"lastCheck":p.lastCheck()})
+	case r.Method==http.MethodPost&&r.URL.Path=="/pause":
+		if err:=panelbridge.Pause(ctx);err!=nil{p.fail(w,503,i18n.T("error.panel.pause_timeout"));return}
+		pending,err:=p.store.PanelPendingRestores(ctx);if err!=nil{p.fail(w,503,i18n.T("error.panel.restore_queue_unavailable"));return}
+		p.ok(w,map[string]any{"paused":true,"pendingRestores":pending})
+	case r.Method==http.MethodPost&&r.URL.Path=="/resume":
+		panelbridge.Resume();p.ok(w,map[string]any{"ready":true})
 	case r.Method==http.MethodGet&&r.URL.Path=="/settings":p.ok(w,p.settings.Items())
 	case r.Method==http.MethodPut&&r.URL.Path=="/settings":
 		var values map[string]string
 		if !p.decode(w,r,&values){return}
-		if len(values)>40 {p.fail(w,400,"Слишком много настроек");return}
+		if len(values)>40 {p.fail(w,400,i18n.T("error.panel.too_many_settings"));return}
 		if values["ACTION_MODE"]=="auto" {
 			persistent,err:=p.store.PanelPersistence(ctx)
-			if err!=nil||!persistent {p.fail(w,400,"Автоматический режим требует сохранения Redis (AOF или RDB)");return}
+			if err!=nil||!persistent {p.fail(w,400,i18n.T("error.panel.auto_mode_persistence"));return}
 		}
 		if err:=p.settings.ApplyMany(ctx,values);err!=nil {p.fail(w,400,err.Error());return}
 		p.ok(w,p.settings.Items())
@@ -115,34 +127,34 @@ func (p *panelControl) ServeHTTP(w http.ResponseWriter,r *http.Request) {
 		if body.Key=="" {err=p.settings.ResetAll(ctx)} else {_,err=p.settings.Reset(ctx,body.Key)}
 		if err!=nil{p.fail(w,400,err.Error());return};p.ok(w,p.settings.Items())
 	case r.Method==http.MethodGet&&r.URL.Path=="/stats":
-		data,err:=p.summary(ctx);if err!=nil {p.fail(w,503,"Не удалось получить статистику");return};p.ok(w,data)
+		data,err:=p.summary(ctx);if err!=nil {p.fail(w,503,i18n.T("error.panel.stats_unavailable"));return};p.ok(w,data)
 	case r.Method==http.MethodGet&&r.URL.Path=="/state":
 		ids,err:=panelIDs(r.URL.Query().Get("ids"));if err!=nil{p.fail(w,400,err.Error());return}
-		data,err:=p.store.PanelStates(ctx,ids);if err!=nil{p.fail(w,503,"Не удалось получить состояние пользователей");return};p.ok(w,data)
+		data,err:=p.store.PanelStates(ctx,ids);if err!=nil{p.fail(w,503,i18n.T("error.panel.user_states_unavailable"));return};p.ok(w,data)
 	case r.Method==http.MethodGet&&r.URL.Path=="/ignored":
-		ids,err:=p.store.PanelWhitelist(ctx);if err!=nil{p.fail(w,503,"Не удалось получить исключения");return};p.ok(w,ids)
+		ids,err:=p.store.PanelWhitelist(ctx);if err!=nil{p.fail(w,503,i18n.T("error.panel.exclusions_unavailable"));return};p.ok(w,ids)
 	case r.Method==http.MethodPost&&r.URL.Path=="/actions":p.perform(w,r)
-	default:p.fail(w,404,"Команда не найдена")
+	default:p.fail(w,404,i18n.T("error.panel.command_not_found"))
 	}
 }
 
-var panelRequestID=regexp.MustCompile(`^[0-9a-fA-F-]{36}$`)
+var panelRequestID=regexp.MustCompile(`^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$`)
 func (p *panelControl) perform(w http.ResponseWriter,r *http.Request) {
 	var body struct { UserID int64 `json:"userId"`;Action string `json:"action"`;Minutes int `json:"minutes"`;RequestID string `json:"requestId"` }
 	if !p.decode(w,r,&body){return}
 	allowed:=map[string]bool{"drop":true,"disable":true,"disable_temp":true,"enable":true,"ignore":true,"ignore_temp":true,"unignore":true}
 	if body.UserID<=0||body.UserID>9007199254740991||!allowed[body.Action]||!panelRequestID.MatchString(body.RequestID) {
-		p.fail(w,400,"Неверное действие или пользователь");return
+		p.fail(w,400,i18n.T("error.panel.invalid_action_or_user"));return
 	}
-	if (body.Action=="disable_temp"||body.Action=="ignore_temp")&&(body.Minutes<1||body.Minutes>525600) {p.fail(w,400,"Укажите срок от 1 минуты до 365 дней");return}
-	if body.Action!="disable_temp"&&body.Action!="ignore_temp"&&body.Minutes!=0 {p.fail(w,400,"Для этого действия срок не задаётся");return}
+	if (body.Action=="disable_temp"||body.Action=="ignore_temp")&&(body.Minutes<1||body.Minutes>525600) {p.fail(w,400,i18n.T("error.panel.invalid_duration"));return}
+	if body.Action!="disable_temp"&&body.Action!="ignore_temp"&&body.Minutes!=0 {p.fail(w,400,i18n.T("error.panel.unexpected_duration"));return}
 	raw,_:=json.Marshal(body);digest:=sha256.Sum256(raw);fingerprint:=hex.EncodeToString(digest[:])
 	p.mu.Lock();defer p.mu.Unlock()
 	prior,err:=p.store.PanelActionResult(r.Context(),body.RequestID)
-	if err!=nil{p.fail(w,503,"Не удалось проверить повтор действия");return}
+	if err!=nil{p.fail(w,503,i18n.T("error.panel.action_retry_check_failed"));return}
 	if prior!="" {
 		var saved struct {Fingerprint string `json:"fingerprint"`;Result any `json:"result"`}
-		if json.Unmarshal([]byte(prior),&saved)!=nil||saved.Fingerprint!=fingerprint{p.fail(w,409,"Идентификатор уже использован другим действием");return}
+		if json.Unmarshal([]byte(prior),&saved)!=nil||saved.Fingerprint!=fingerprint{p.fail(w,409,i18n.T("error.panel.request_id_conflict"));return}
 		p.ok(w,saved.Result);return
 	}
 	ctx:=context.WithValue(r.Context(),panelSourceKey{},"panel")
@@ -150,24 +162,24 @@ func (p *panelControl) perform(w http.ResponseWriter,r *http.Request) {
 	if err:=p.action(ctx,telegram.Action{Name:body.Action,UserID:body.UserID,Minutes:body.Minutes});err!=nil {p.fail(w,502,err.Error());return}
 	state,err:=p.store.PanelStates(ctx,[]int64{body.UserID})
 	result:=map[string]any{"success":true,"action":body.Action,"userId":body.UserID,"state":state[strconv.FormatInt(body.UserID,10)]}
-	if err!=nil {result["warning"]="Действие выполнено; обновите состояние пользователя"}
-	if err:=p.store.SavePanelActionResult(ctx,body.RequestID,fingerprint,result);err!=nil {result["warning"]="Действие выполнено; не повторяйте запрос до обновления состояния"}
+	if err!=nil {result["warning"]=i18n.T("panel.warning.refresh_state")}
+	if err:=p.store.SavePanelActionResult(ctx,body.RequestID,fingerprint,result);err!=nil {result["warning"]=i18n.T("panel.warning.do_not_repeat")}
 	if p.notify!=nil {p.notify(telegram.Action{Name:body.Action,UserID:body.UserID,Minutes:body.Minutes})}
 	p.ok(w,result)
 }
 func panelIDs(raw string)([]int64,error) {
 	if raw=="" {return []int64{},nil}
-	parts:=strings.Split(raw,",");if len(parts)>250{return nil,fmt.Errorf("Слишком много пользователей")}
+	parts:=strings.Split(raw,",");if len(parts)>250{return nil,errors.New(i18n.T("error.panel.too_many_users"))}
 	ids:=make([]int64,0,len(parts));seen:=map[int64]bool{}
-	for _,part:=range parts {id,err:=strconv.ParseInt(part,10,64);if err!=nil||id<1||id>9007199254740991{return nil,fmt.Errorf("Неверный пользователь")};if !seen[id]{ids=append(ids,id);seen[id]=true}}
+	for _,part:=range parts {id,err:=strconv.ParseInt(part,10,64);if err!=nil||id<1||id>9007199254740991{return nil,errors.New(i18n.T("error.panel.invalid_user"))};if !seen[id]{ids=append(ids,id);seen[id]=true}}
 	return ids,nil
 }
 func (p *panelControl) decode(w http.ResponseWriter,r *http.Request,target any)bool {
 	r.Body=http.MaxBytesReader(w,r.Body,65536)
 	d:=json.NewDecoder(r.Body);d.DisallowUnknownFields()
-	if err:=d.Decode(target);err!=nil{p.fail(w,400,"Некорректный запрос");return false}
+	if err:=d.Decode(target);err!=nil{p.fail(w,400,i18n.T("error.panel.invalid_request"));return false}
 	var trailing any
-	if err:=d.Decode(&trailing);err!=io.EOF {p.fail(w,400,"Некорректный запрос");return false}
+	if err:=d.Decode(&trailing);err!=io.EOF {p.fail(w,400,i18n.T("error.panel.invalid_request"));return false}
 	return true
 }
 func (p *panelControl) ok(w http.ResponseWriter,v any){_ = json.NewEncoder(w).Encode(map[string]any{"response":v})}
@@ -175,9 +187,9 @@ func (p *panelControl) fail(w http.ResponseWriter,status int,message string){w.W
 
 func startPanelControl(ctx context.Context,c *cache.Cache,cfg *config.Provider,mgr *settings.Manager,mon *monitor.Monitor,trafficMon *traffic.Monitor,action telegram.ActionHandler,bot *telegram.Bot,logger *logrus.Logger)error {
 	path:=os.Getenv("REMNADROP_PANEL_CONTROL_SOCKET");if path==""{return nil}
-	token:=os.Getenv("REMNADROP_PANEL_CONTROL_TOKEN");if len(token)<32{return fmt.Errorf("panel control credential is missing")}
+	token:=os.Getenv("REMNADROP_PANEL_CONTROL_TOKEN");if len(token)<32{return errors.New(i18n.T("error.panel.control_credential_missing"))}
 	if existing,err:=os.Lstat(path);err==nil {
-		if existing.Mode()&os.ModeSocket==0 {return fmt.Errorf("panel control path is not a socket")}
+		if existing.Mode()&os.ModeSocket==0 {return errors.New(i18n.T("error.panel.control_path_not_socket"))}
 		if err:=os.Remove(path);err!=nil{return err}
 	}else if !errors.Is(err,os.ErrNotExist){return err}
 	listener,err:=net.Listen("unix",path);if err!=nil{return err}
@@ -187,19 +199,19 @@ func startPanelControl(ctx context.Context,c *cache.Cache,cfg *config.Provider,m
 			if !bot.NotificationsEnabled(){return}
 			go func(){
 				notifyCtx,cancel:=context.WithTimeout(context.Background(),8*time.Second);defer cancel()
-				if err:=bot.SendPanelActivity(notifyCtx,a);err!=nil {logger.Warn("Panel action completed; Telegram activity notification could not be delivered")}
+				if err:=bot.SendPanelActivity(notifyCtx,a);err!=nil {logger.Warn(i18n.T("log.panel_activity_notice_failed"))}
 			}()
 		},
 		summary:func(ctx context.Context)(any,error){
 			stats,err:=c.GetViolationStats(ctx,10);if err!=nil{return nil,err}
 			heavy,heavyErr:=trafficMon.HeavyReport(ctx)
 			data:=map[string]any{"violations":stats,"heavyTraffic":heavy,"lastCheck":mon.LastSuccessfulCheck()}
-			if heavyErr!=nil{data["heavyTrafficError"]="Статистика трафика временно недоступна"}
+			if heavyErr!=nil{data["heavyTrafficError"]=i18n.T("panel.warning.traffic_unavailable")}
 			return data,nil
 		},
 	}
 	server:=&http.Server{Handler:handler,ReadHeaderTimeout:3*time.Second,ReadTimeout:10*time.Second,WriteTimeout:30*time.Second,IdleTimeout:30*time.Second,MaxHeaderBytes:8192}
-	go func(){if err:=server.Serve(listener);err!=nil&&err!=http.ErrServerClosed{logger.WithError(err).Error("panel control stopped")}}()
+	go func(){if err:=server.Serve(listener);err!=nil&&err!=http.ErrServerClosed{logger.WithError(err).Error(i18n.T("log.panel_control_stopped"))}}()
 	go func(){<-ctx.Done();shutdown,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel();_ = server.Shutdown(shutdown);_ = os.Remove(path)}()
 	return nil
 }

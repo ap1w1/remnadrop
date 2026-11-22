@@ -21,6 +21,7 @@ func(s *memoryPanelStore)SavePanelActionResult(_ context.Context,id,fingerprint 
  raw,err:=json.Marshal(map[string]any{"fingerprint":fingerprint,"result":result});s.results[id]=string(raw);return err
 }
 func(s *memoryPanelStore)PanelPersistence(context.Context)(bool,error){return s.persistent,nil}
+func(s *memoryPanelStore)PanelPendingRestores(context.Context)(int64,error){return 0,nil}
 type memoryPanelSettings struct{calls int; values map[string]string}
 func(s *memoryPanelSettings)Items()[]telegram.SettingItem{return nil}
 func(s *memoryPanelSettings)ApplyMany(_ context.Context,v map[string]string)error{s.calls++;s.values=v;return nil}

@@ -50,10 +50,10 @@ replace('cmd/limiter/main.go',
     '\tactionHandler := newPanelActionHandler(newActionHandler(apiClient, redisCache, cfgProvider, logger), redisCache, cfgProvider)\n\tbot.SetActionHandler(actionHandler)')
 replace('cmd/limiter/main.go',
     '\tgo bot.StartPolling(sigCtx)',
-    '\tif err := startPanelControl(sigCtx, redisCache, cfgProvider, settingsMgr, mon, trafficMon, actionHandler, bot, logger); err != nil {\n\t\tlogger.WithError(err).Error("panel control startup failed")\n\t\treturn 1\n\t}\n\tgo bot.StartPolling(sigCtx)')
+    '\tif err := startPanelControl(sigCtx, redisCache, cfgProvider, settingsMgr, mon, trafficMon, actionHandler, bot, logger); err != nil {\n\t\tlogger.WithError(err).Error(i18n.T("log.panel_control_start_failed"))\n\t\treturn 1\n\t}\n\tgo bot.StartPolling(sigCtx)')
 replace('cmd/limiter/main.go',
     '\tcfgProvider.Watch(func(c *config.Config) { applyLogSettings(logger, c) })',
-    '\tpanelbridge.SetMode(cfg.ActionMode)\n\tcfgProvider.Watch(func(c *config.Config) {\n\t\tapplyLogSettings(logger, c)\n\t\tpanelbridge.SetMode(c.ActionMode)\n\t\tvalues := make(map[string]string)\n\t\tfor _, field := range config.Registry() { values[field.Key] = config.Display(c, field.Key) }\n\t\tpanelbridge.Emit(ctx, "settings_changed", nil, values)\n\t})')
+    '\tpanelbridge.SetMode(cfg.ActionMode)\n\tpanelbridge.StartPaused()\n\tcfgProvider.Watch(func(c *config.Config) {\n\t\tapplyLogSettings(logger, c)\n\t\tpanelbridge.SetMode(c.ActionMode)\n\t\tvalues := make(map[string]string)\n\t\tfor _, field := range config.Registry() { values[field.Key] = config.Display(c, field.Key) }\n\t\tpanelbridge.Emit(ctx, "settings_changed", nil, values)\n\t})')
 
 # Preserve every observed node for each unique IP without changing device counting.
 replace('internal/api/types.go',
@@ -73,6 +73,21 @@ replace('internal/monitor/monitor.go','\t\tm.webhook.Send(sendCtx, payload)','\t
 
 for path in ['internal/monitor/monitor.go','internal/traffic/traffic.go','internal/hwidshare/hwidshare.go']:
     add_import(path,'github.com/remnawave/limiter/internal/panelbridge')
+replace('internal/monitor/monitor.go',
+    'func (m *Monitor) check(ctx context.Context) {',
+    'func (m *Monitor) check(ctx context.Context) {\n\tif panelbridge.Paused() { return }')
+for path in ['internal/traffic/traffic.go','internal/hwidshare/hwidshare.go']:
+    replace(path,'func (m *Monitor) Poll(ctx context.Context) {',
+        'func (m *Monitor) Poll(ctx context.Context) {\n\tif panelbridge.Paused() { return }')
+replace('internal/monitor/monitor.go','func (m *Monitor) sendDailyReport(ctx context.Context) {',
+    'func (m *Monitor) sendDailyReport(ctx context.Context) {\n\tif panelbridge.Paused() { return }')
+replace('internal/monitor/monitor.go',
+    'func (m *Monitor) handleAutoAction(ctx context.Context, cfg *config.Config, user *api.CachedUser, ips []api.ActiveIP, limit int, violationCount int64, subnetGroups, asnGroups int) {',
+    'func (m *Monitor) handleAutoAction(ctx context.Context, cfg *config.Config, user *api.CachedUser, ips []api.ActiveIP, limit int, violationCount int64, subnetGroups, asnGroups int) {\n\trelease, allowed := panelbridge.BeginDisable()\n\tif !allowed { return }\n\tdefer release()')
+# Release admission after the disable/timer mutation, before any Telegram network wait.
+replace('internal/monitor/monitor.go',
+    '\tev := m.collectEvidence(ctx, user.UserID, ips)\n\ttext := telegram.FormatAutoAlert',
+    '\trelease()\n\tev := m.collectEvidence(ctx, user.UserID, ips)\n\ttext := telegram.FormatAutoAlert')
 replace('internal/traffic/traffic.go',
     '\t\ttext := telegram.FormatTrafficAlert(alert, m.location)',
     '\t\teventType := "traffic_spike"\n\t\tif alert.Heavy { eventType = "traffic_heavy" }\n\t\tpanelbridge.Emit(ctx, eventType, alert.User, alert)\n\t\ttext := telegram.FormatTrafficAlert(alert, m.location)')
@@ -98,11 +113,13 @@ replace('internal/settings/manager.go',
     '\tnewCfg, err := config.LoadConfigWithOverrides(m.envPath, nil)\n\tif err != nil {\n\t\treturn err\n\t}\n\tif err := m.ensurePanelPersistence(ctx, newCfg); err != nil { return err }')
 replace('internal/monitor/monitor.go',
     '\t\tif attempts < maxRestoreAttempts {',
-    '\t\tpanelbridge.Emit(ctx, "action", &api.CachedUser{UserID:userID}, map[string]any{"action":"enable","source":"restore","success":false,"message":fmt.Sprintf("Не удалось включить подписку автоматически. Попытка %d из %d.", attempts, maxRestoreAttempts)})\n\t\tif attempts < maxRestoreAttempts {')
+    '\t\tpanelbridge.Emit(ctx, "action", &api.CachedUser{UserID:userID}, map[string]any{"action":"enable","source":"restore","success":false,"message":fmt.Sprintf(i18n.T("panel.action.restore_failed"), attempts, maxRestoreAttempts)})\n\t\tif attempts < maxRestoreAttempts {')
 replace('internal/monitor/monitor.go',
     '\t\tm.logger.WithError(err).WithField("userID", user.UserID).Error(i18n.T("log.user_disable_failed"))',
-    '\t\tm.logger.WithError(err).WithField("userID", user.UserID).Error(i18n.T("log.user_disable_failed"))\n\t\tpanelbridge.Emit(ctx, "action", user, map[string]any{"action":"disable","source":"auto","success":false,"message":"Не удалось отключить подписку автоматически"})')
+    '\t\tm.logger.WithError(err).WithField("userID", user.UserID).Error(i18n.T("log.user_disable_failed"))\n\t\tpanelbridge.Emit(ctx, "action", user, map[string]any{"action":"disable","source":"auto","success":false,"message":i18n.T("panel.action.disable_failed")})')
 add_import('internal/updatecheck/updatecheck.go','github.com/remnawave/limiter/internal/panelbridge')
+replace('internal/updatecheck/updatecheck.go','func (c *Checker) Check(ctx context.Context) {',
+    'func (c *Checker) Check(ctx context.Context) {\n\tif panelbridge.Paused() { return }')
 replace('internal/updatecheck/updatecheck.go',
     '\tif err := c.Notifier.SendUpdateNotice(ctx, c.Current, rel.Version, rel.URL); err != nil {',
     '\tpanelbridge.Emit(ctx, "update_available", nil, map[string]any{"current":c.Current,"latest":rel.Version,"url":rel.URL})\n\tif err := c.Notifier.SendUpdateNotice(ctx, c.Current, rel.Version, rel.URL); err != nil {')

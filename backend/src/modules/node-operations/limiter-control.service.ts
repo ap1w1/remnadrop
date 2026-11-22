@@ -10,7 +10,10 @@ export type LimiterUserState = { ignored:boolean; permanentIgnore:boolean; ignor
 @Injectable()
 export class LimiterControlService {
   readonly socketPath = '/var/lib/remnawave/limiter/control.sock';
+  private processExpected=false;
   constructor(private readonly secrets:LimiterBridgeSecretsService) {}
+  setProcessExpected(value:boolean):void{this.processExpected=value;}
+  isProcessExpected():boolean{return this.processExpected;}
 
   async call<T>(method:string,path:string,body?:unknown):Promise<T> {
     const payload=body===undefined?undefined:Buffer.from(JSON.stringify(body));
@@ -43,9 +46,11 @@ export class LimiterControlService {
     });
   }
 
-  async health():Promise<{ready:boolean;lastCheck:string}|null> {
+  async health():Promise<{ready:boolean;lastCheck:string;pauseReason?:string}|null> {
     try{return await this.call('GET','/health');}catch{return null;}
   }
+  pause():Promise<{paused:boolean;pendingRestores:number}>{return this.call('POST','/pause',{});}
+  resume():Promise<unknown>{return this.call('POST','/resume',{});}
 
   private options():RedisOptions {
     const password=process.env.REDIS_PASSWORD||undefined;

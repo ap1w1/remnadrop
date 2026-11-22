@@ -88,3 +88,4 @@ func (c *Cache) PanelPersistence(ctx context.Context) (bool,error) {
 	rdb,err:=c.client.ConfigGet(ctx,"save").Result();if err!=nil{return false,err}
 	return aof["appendonly"]=="yes"||rdb["save"]!="",nil
 }
+func (c *Cache) PanelPendingRestores(ctx context.Context)(int64,error){return c.client.ZCard(ctx,keyRestoreQ).Result()}

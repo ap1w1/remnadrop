@@ -240,7 +240,7 @@ try {
   await capture('automation-execution-history');
 
   await page.getByRole('button', { name: 'Recap', exact: true }).click();
-  await visible(page.getByText('RemnaDrop', { exact: true }).last());
+  await visible(page.getByRole('dialog').getByText('RemnaDrop', { exact: true }));
   await capture('recap-branding');
   await page.keyboard.press('Escape');
 

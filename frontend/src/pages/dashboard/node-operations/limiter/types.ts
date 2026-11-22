@@ -25,7 +25,7 @@ export type LimiterEvent={id:string;user_uuid:string|null;user_id:string|null;us
  Devices?:{Items:Array<{Name:string;App:string;Seen:string}>}}};
  subscriptionUrl:string|null;user_status:string|null;state:UserState|null;stateAvailable:boolean;
  last_action:{action:string;source:string;success:boolean;createdAt:string;message:string}|null}
-export type EngineStatus={running:boolean;ready:boolean;lastCheck:string|null}
+export type EngineStatus={running:boolean;ready:boolean;restoring?:boolean;lastCheck:string|null}
 export type Summary={count24h:number;countWeek:number;users24h:number;liveAvailable:boolean;live:{
  violations?:{Count24h:number;CountWeek:number;Top:Array<{UserID:string;Username:string;Count:number}>};heavyTraffic?:Record<string,unknown>;lastCheck:string}|null}
 export type IgnoredUser=UserState&{uuid:string;userId:string;username:string;status:string}
