@@ -62,3 +62,8 @@ CREATE TABLE cf_dns_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX cf_dns_events_recent_idx ON cf_dns_events (created_at DESC);
+
+CREATE TABLE cf_dns_webhook_receipts (
+  event_id uuid PRIMARY KEY,
+  received_at timestamptz NOT NULL DEFAULT now()
+);
