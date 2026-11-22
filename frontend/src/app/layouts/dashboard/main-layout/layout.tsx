@@ -26,6 +26,7 @@ export function MainLayout() {
     const headerControls = (
         <HeaderControls
             {...DASHBOARD_LINKS}
+            telegramLink="https://t.me/remnadrop"
             isGithubLoading={isLoadingUpdates}
             stars={remnawaveInfo.starsCount || undefined}
             withGithub={false}
