@@ -49,12 +49,15 @@ func TestPanelControlRequiresAuthentication(t *testing.T){
 }
 func TestPanelActionsDeduplicateAndRejectReusedID(t *testing.T){
  p,calls:=panelTestHandler()
+ notifications:=0;p.notify=func(telegram.Action){notifications++}
  body:=`{"userId":123,"action":"disable_temp","minutes":1440,"requestId":"c57b867e-12a8-44e8-a1c6-4038755c5e52"}`
  for i:=0;i<2;i++{if r:=panelTestRequest(p,http.MethodPost,"/actions",body,p.token);r.Code!=200{t.Fatalf("action failed: %s",r.Body.String())}}
  if *calls!=1{t.Fatalf("duplicate changed the restore timer: %d actions",*calls)}
+ if notifications!=1{t.Fatalf("duplicate sent %d activity messages",notifications)}
  changed:=strings.Replace(body,`"minutes":1440`,`"minutes":30`,1)
  if r:=panelTestRequest(p,http.MethodPost,"/actions",changed,p.token);r.Code!=409{t.Fatalf("mismatched duplicate: %d",r.Code)}
  if *calls!=1{t.Fatal("mismatched duplicate executed")}
+ if notifications!=1{t.Fatal("mismatched duplicate sent an activity message")}
 }
 func TestPanelRejectsInvalidActionsBeforeExecution(t *testing.T){
  p,calls:=panelTestHandler()

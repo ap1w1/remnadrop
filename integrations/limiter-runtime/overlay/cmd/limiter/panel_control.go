@@ -51,6 +51,7 @@ type panelControl struct {
 	action telegram.ActionHandler
 	summary func(context.Context)(any,error)
 	lastCheck func()time.Time
+	notify func(telegram.Action)
 	mu sync.Mutex
 }
 
@@ -64,6 +65,10 @@ func newPanelActionHandler(original telegram.ActionHandler,c *cache.Cache,cfg *c
 			persistent,err:=c.PanelPersistence(ctx)
 			if err!=nil{return err}
 			if !persistent{return fmt.Errorf("Для временной блокировки включите сохранение Redis (AOF или RDB)")}
+		}
+		if a.Name=="ignore_temp" {
+			states,err:=c.PanelStates(ctx,[]int64{a.UserID});if err!=nil{return err}
+			if states[strconv.FormatInt(a.UserID,10)].PermanentIgnore{return fmt.Errorf("Сначала уберите постоянное исключение пользователя")}
 		}
 		var err error
 		if a.Name=="unignore" {err=c.RemoveFromWhitelist(ctx,a.UserID)} else {err=original(ctx,a)}
@@ -147,6 +152,7 @@ func (p *panelControl) perform(w http.ResponseWriter,r *http.Request) {
 	result:=map[string]any{"success":true,"action":body.Action,"userId":body.UserID,"state":state[strconv.FormatInt(body.UserID,10)]}
 	if err!=nil {result["warning"]="Действие выполнено; обновите состояние пользователя"}
 	if err:=p.store.SavePanelActionResult(ctx,body.RequestID,fingerprint,result);err!=nil {result["warning"]="Действие выполнено; не повторяйте запрос до обновления состояния"}
+	if p.notify!=nil {p.notify(telegram.Action{Name:body.Action,UserID:body.UserID,Minutes:body.Minutes})}
 	p.ok(w,result)
 }
 func panelIDs(raw string)([]int64,error) {
@@ -167,7 +173,7 @@ func (p *panelControl) decode(w http.ResponseWriter,r *http.Request,target any)b
 func (p *panelControl) ok(w http.ResponseWriter,v any){_ = json.NewEncoder(w).Encode(map[string]any{"response":v})}
 func (p *panelControl) fail(w http.ResponseWriter,status int,message string){w.WriteHeader(status);_ = json.NewEncoder(w).Encode(map[string]any{"message":message})}
 
-func startPanelControl(ctx context.Context,c *cache.Cache,cfg *config.Provider,mgr *settings.Manager,mon *monitor.Monitor,trafficMon *traffic.Monitor,action telegram.ActionHandler,logger *logrus.Logger)error {
+func startPanelControl(ctx context.Context,c *cache.Cache,cfg *config.Provider,mgr *settings.Manager,mon *monitor.Monitor,trafficMon *traffic.Monitor,action telegram.ActionHandler,bot *telegram.Bot,logger *logrus.Logger)error {
 	path:=os.Getenv("REMNADROP_PANEL_CONTROL_SOCKET");if path==""{return nil}
 	token:=os.Getenv("REMNADROP_PANEL_CONTROL_TOKEN");if len(token)<32{return fmt.Errorf("panel control credential is missing")}
 	if existing,err:=os.Lstat(path);err==nil {
@@ -177,6 +183,13 @@ func startPanelControl(ctx context.Context,c *cache.Cache,cfg *config.Provider,m
 	listener,err:=net.Listen("unix",path);if err!=nil{return err}
 	if err:=os.Chmod(path,0600);err!=nil{listener.Close();return err}
 	handler:=&panelControl{token:token,settings:mgr,store:c,action:action,lastCheck:mon.LastSuccessfulCheck,
+		notify:func(a telegram.Action){
+			if !bot.NotificationsEnabled(){return}
+			go func(){
+				notifyCtx,cancel:=context.WithTimeout(context.Background(),8*time.Second);defer cancel()
+				if err:=bot.SendPanelActivity(notifyCtx,a);err!=nil {logger.Warn("Panel action completed; Telegram activity notification could not be delivered")}
+			}()
+		},
 		summary:func(ctx context.Context)(any,error){
 			stats,err:=c.GetViolationStats(ctx,10);if err!=nil{return nil,err}
 			heavy,heavyErr:=trafficMon.HeavyReport(ctx)

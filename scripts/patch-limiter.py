@@ -50,7 +50,7 @@ replace('cmd/limiter/main.go',
     '\tactionHandler := newPanelActionHandler(newActionHandler(apiClient, redisCache, cfgProvider, logger), redisCache, cfgProvider)\n\tbot.SetActionHandler(actionHandler)')
 replace('cmd/limiter/main.go',
     '\tgo bot.StartPolling(sigCtx)',
-    '\tif err := startPanelControl(sigCtx, redisCache, cfgProvider, settingsMgr, mon, trafficMon, actionHandler, logger); err != nil {\n\t\tlogger.WithError(err).Error("panel control startup failed")\n\t\treturn 1\n\t}\n\tgo bot.StartPolling(sigCtx)')
+    '\tif err := startPanelControl(sigCtx, redisCache, cfgProvider, settingsMgr, mon, trafficMon, actionHandler, bot, logger); err != nil {\n\t\tlogger.WithError(err).Error("panel control startup failed")\n\t\treturn 1\n\t}\n\tgo bot.StartPolling(sigCtx)')
 replace('cmd/limiter/main.go',
     '\tcfgProvider.Watch(func(c *config.Config) { applyLogSettings(logger, c) })',
     '\tpanelbridge.SetMode(cfg.ActionMode)\n\tcfgProvider.Watch(func(c *config.Config) {\n\t\tapplyLogSettings(logger, c)\n\t\tpanelbridge.SetMode(c.ActionMode)\n\t\tvalues := make(map[string]string)\n\t\tfor _, field := range config.Registry() { values[field.Key] = config.Display(c, field.Key) }\n\t\tpanelbridge.Emit(ctx, "settings_changed", nil, values)\n\t})')
@@ -106,6 +106,19 @@ add_import('internal/updatecheck/updatecheck.go','github.com/remnawave/limiter/i
 replace('internal/updatecheck/updatecheck.go',
     '\tif err := c.Notifier.SendUpdateNotice(ctx, c.Current, rel.Version, rel.URL); err != nil {',
     '\tpanelbridge.Emit(ctx, "update_available", nil, map[string]any{"current":c.Current,"latest":rel.Version,"url":rel.URL})\n\tif err := c.Notifier.SendUpdateNotice(ctx, c.Current, rel.Version, rel.URL); err != nil {')
+
+# Gate automatic notifications, not /settings, /stats or existing callback replies.
+for signature in [
+    'SendManualAlert(ctx context.Context, text string, userID int64, disableDuration int, ignoreDuration int)',
+    'SendAutoAlert(ctx context.Context, text string, userID int64)',
+    'SendSoftAlert(ctx context.Context, text string, userID int64, ignoreDuration int)',
+    'SendMessage(ctx context.Context, text string)',
+    'SendDailyReport(ctx context.Context, text string)',
+    'SendStartupMessage(ctx context.Context, text string)',
+    'SendUpdateNotice(ctx context.Context, current, latest, releaseURL string)',
+]:
+    anchor='func (b *Bot) '+signature+' error {'
+    replace('internal/telegram/bot.go',anchor,anchor+'\n\tif !b.NotificationsEnabled() { return nil }')
 
 for source in overlay.rglob('*.go'):
     destination=root/source.relative_to(overlay)

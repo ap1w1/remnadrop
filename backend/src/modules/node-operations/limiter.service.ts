@@ -14,7 +14,7 @@ export type LimiterSettings = {
  trafficMonitor:boolean;trafficSpikeFactor:number;trafficSpikeMinGb:number;trafficHeavyGb:number;
  trafficHeavyDays:number;sharedHwidMonitor:boolean;sharedHwidHistoryDays:number;dailyReport:boolean;
  updateCheck:boolean;ignoredNodes:string[];ignoredUsers:string[];ignoredIps:string[];
- trafficIgnoredNodes:string[];ignoreDurationMinutes:number;userCacheTtlSeconds:number;logLevel:string;
+ trafficIgnoredNodes:string[];ignoreDurationMinutes:number;userCacheTtlSeconds:number;logLevel:string;telegramNotifications:boolean;
 };
 const defaults:LimiterSettings={
  enabled:false,mode:'manual',checkIntervalSeconds:60,activeWindowSeconds:120,tolerance:1,
@@ -24,7 +24,7 @@ const defaults:LimiterSettings={
  trafficMonitor:false,trafficSpikeFactor:10,trafficSpikeMinGb:150,
  trafficHeavyGb:200,trafficHeavyDays:5,
  sharedHwidMonitor:false,sharedHwidHistoryDays:30,dailyReport:false,updateCheck:false,
- ignoredNodes:[],ignoredUsers:[],ignoredIps:[],trafficIgnoredNodes:[],ignoreDurationMinutes:360,userCacheTtlSeconds:600,logLevel:'info'
+ ignoredNodes:[],ignoredUsers:[],ignoredIps:[],trafficIgnoredNodes:[],ignoreDurationMinutes:360,userCacheTtlSeconds:600,logLevel:'info',telegramNotifications:true
 };
 const uuid=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 function validIpOrCidr(value:string):boolean{
@@ -37,7 +37,7 @@ function validIpOrCidr(value:string):boolean{
 function normalizeSettings(input:unknown):LimiterSettings{
  if(!input||typeof input!=='object'||Array.isArray(input))throw new BadRequestException('Invalid Limiter settings');
  const v={...defaults,...input} as LimiterSettings;
- if(typeof v.enabled!=='boolean'||!['manual','auto'].includes(v.mode)||['softWarnings','subnetGrouping','asnGrouping','trafficMonitor','sharedHwidMonitor','dailyReport','updateCheck'].some(k=>typeof(v as unknown as Record<string,unknown>)[k]!=='boolean'))
+ if(typeof v.enabled!=='boolean'||!['manual','auto'].includes(v.mode)||['softWarnings','subnetGrouping','asnGrouping','trafficMonitor','sharedHwidMonitor','dailyReport','updateCheck','telegramNotifications'].some(k=>typeof(v as unknown as Record<string,unknown>)[k]!=='boolean'))
    throw new BadRequestException('Invalid Limiter flags');
  const ranges={
    checkIntervalSeconds:[1,31536000],activeWindowSeconds:[1,31536000],
@@ -230,6 +230,7 @@ export class LimiterService {
    // Current values are the shared Redis overrides, seeded from older installations once.
    const env:Record<string,string>={...toOverrides(defaults),
      WHITELIST_USER_IDS:'',IGNORED_NODE_UUIDS:cfg.ignoredNodes.join(','),
+     REMNADROP_TELEGRAM_NOTIFICATIONS:String(cfg.telegramNotifications),
      TRAFFIC_IGNORED_NODE_UUIDS:cfg.trafficIgnoredNodes.join(','),IP_WHITELIST:cfg.ignoredIps.join(','),
    };
    if(credentials.telegramBotToken){

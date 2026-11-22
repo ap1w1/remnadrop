@@ -5,14 +5,14 @@ export type Settings={enabled:boolean;mode:Mode;checkIntervalSeconds:number;acti
  toleranceMultiplier:number;defaultDeviceLimit:number;violationThreshold:number;thresholdWindowSeconds:number;cooldownSeconds:number;
  autoRestoreMinutes:number;ignoreDurationMinutes:number;userCacheTtlSeconds:number;logLevel:string;softWarnings:boolean;subnetGrouping:boolean;subnetPrefixV4:number;asnGrouping:boolean;
  trafficMonitor:boolean;trafficSpikeFactor:number;trafficSpikeMinGb:number;trafficHeavyGb:number;trafficHeavyDays:number;
- sharedHwidMonitor:boolean;sharedHwidHistoryDays:number;dailyReport:boolean;updateCheck:boolean;
+ sharedHwidMonitor:boolean;sharedHwidHistoryDays:number;dailyReport:boolean;updateCheck:boolean;telegramNotifications:boolean;
  ignoredNodes:string[];trafficIgnoredNodes:string[];ignoredUsers:string[];ignoredIps:string[];
  lastScanAt:string|null;lastError:string|null;engineVersion:string}
 export const defaultConfig:Settings={enabled:false,mode:'manual',checkIntervalSeconds:60,activeWindowSeconds:120,tolerance:1,
  toleranceMultiplier:0,defaultDeviceLimit:0,violationThreshold:3,thresholdWindowSeconds:3600,cooldownSeconds:300,autoRestoreMinutes:15,
  ignoreDurationMinutes:360,userCacheTtlSeconds:600,logLevel:'info',softWarnings:false,subnetGrouping:false,subnetPrefixV4:24,asnGrouping:false,
  trafficMonitor:false,trafficSpikeFactor:10,trafficSpikeMinGb:150,trafficHeavyGb:200,trafficHeavyDays:5,
- sharedHwidMonitor:false,sharedHwidHistoryDays:30,dailyReport:false,updateCheck:false,
+ sharedHwidMonitor:false,sharedHwidHistoryDays:30,dailyReport:false,updateCheck:false,telegramNotifications:true,
  ignoredNodes:[],trafficIgnoredNodes:[],ignoredUsers:[],ignoredIps:[],lastScanAt:null,lastError:null,engineVersion:'5.1.0'}
 export type UserState={ignored:boolean;permanentIgnore:boolean;ignoredUntil:string|null;restoreAt:string|null}
 export type NodeConnection={node_uuid?:string;node_name?:string;last_seen?:string}

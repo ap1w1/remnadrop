@@ -336,15 +336,17 @@ async function apiSmoke() {
   assert.equal(settings.enabled, false);
   assert.equal(settings.mode, 'manual');
   assert.equal(settings.engineVersion, '5.1.0');
+  assert.equal(settings.telegramNotifications, true);
   const status = (await request('/api/limiter/status', { token })).response;
   assert.equal(status.embedded, true);
   assert.equal(status.running, false);
   assert.equal(status.pid, null);
   assert.equal((await request('/api/limiter/credentials', { token })).response.configured, false);
-  await request('/api/limiter/settings', { method: 'PUT', token, body: { enabled: false, checkIntervalSeconds: 90 } });
+  await request('/api/limiter/settings', { method: 'PUT', token, body: { enabled: false, checkIntervalSeconds: 90, telegramNotifications: false } });
   const saved = (await request('/api/limiter/settings', { token })).response;
   assert.equal(saved.enabled, false);
   assert.equal(saved.checkIntervalSeconds, 90);
+  assert.equal(saved.telegramNotifications, false);
 
   // Synthetic credentials are stored/round-tripped only while the engine stays off.
   const fakeBotToken = '12345:' + randomBytes(24).toString('hex');
@@ -361,6 +363,10 @@ async function apiSmoke() {
   const decrypted = JSON.parse(Buffer.concat([decipher.update(Buffer.from(encrypted.ciphertext)), decipher.final()]).toString());
   assert.equal(decrypted.telegramBotToken, fakeBotToken);
   assert(!Buffer.from(encrypted.ciphertext).includes(Buffer.from(fakeBotToken)));
+  await request('/api/limiter/settings', { method: 'PUT', token, body: { telegramNotifications: true } });
+  await request('/api/limiter/settings', { method: 'PUT', token, body: { telegramNotifications: false } });
+  const [retainedCredential] = await db.$queryRaw`SELECT ciphertext FROM limiter_credentials WHERE id=1`;
+  assert.deepEqual(Buffer.from(retainedCredential.ciphertext), Buffer.from(encrypted.ciphertext), 'Telegram duplication toggle must preserve saved credentials');
   assert.equal((await request('/api/limiter/credentials', { method: 'DELETE', token })).response.configured, false);
   const migratedLimiterEvents = (await request('/api/limiter/events', { token })).response;
   assert.equal(migratedLimiterEvents.length, 1);

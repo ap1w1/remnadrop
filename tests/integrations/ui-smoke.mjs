@@ -52,7 +52,7 @@ const limiterSettings = {
   subnetGrouping: false, subnetPrefixV4: 24, asnGrouping: false,
   trafficMonitor: false, trafficSpikeFactor: 10, trafficSpikeMinGb: 150, trafficHeavyGb: 200,
   trafficHeavyDays: 5, sharedHwidMonitor: false, sharedHwidHistoryDays: 30, dailyReport: true,
-  updateCheck: false, ignoredNodes: [], ignoredUsers: [], ignoredIps: [], trafficIgnoredNodes: [],
+  updateCheck: false, telegramNotifications: true, ignoredNodes: [], ignoredUsers: [], ignoredIps: [], trafficIgnoredNodes: [],
   ignoreDurationMinutes: 360, userCacheTtlSeconds: 600, logLevel: 'info', lastScanAt: now, lastError: null, engineVersion: '5.1.0',
 };
 const ips = Array.from({ length: 9 }, (_, index) => ({ ip: '198.51.100.' + (index + 10), node_uuid: nodeId,
@@ -194,6 +194,16 @@ try {
   await visible(page.getByRole('heading', { name: 'Настройки Limiter', exact: true }));
   await visible(page.getByLabel('Режим', { exact: true }));
   await capture('limiter-settings-desktop');
+  await page.getByRole('tab', { name: 'Уведомления', exact: true }).click();
+  const duplication = page.getByLabel('Дублировать события и действия в Telegram', { exact: true });
+  await visible(duplication);
+  assert.equal(await duplication.isChecked(), true);
+  await duplication.uncheck();
+  await page.getByRole('button', { name: 'Сохранить настройки', exact: true }).click();
+  await visible(page.getByText('Настройки сохранены. Проверка применит изменения автоматически.', { exact: true }));
+  assert(calls.some(call => call.pathname === '/api/limiter/settings' && call.method === 'PUT' && call.body.telegramNotifications === false));
+  assert(!calls.some(call => call.pathname === '/api/limiter/credentials' && call.method === 'DELETE'), 'Turning off duplication must preserve credentials');
+  await capture('limiter-telegram-duplication');
 
   await page.goto(origin + '/dashboard/management/automations');
   await visible(page.getByRole('heading', { name: 'Автоматизации', exact: true }));
