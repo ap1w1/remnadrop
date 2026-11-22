@@ -149,7 +149,7 @@ export function LimiterPage(){
            {events.find(e=>e.user_uuid===uuid)?.username??uuid} ×
          </Button>)}
        </Group>
-     </Stack>
+     </Stack>}
      <Card withBorder p="sm" radius="md"><Stack gap="sm">
        <Title order={5}>Мониторинг аномального трафика (5.1.0)</Title>
        <Switch label="Включить обнаружение всплесков и высокого трафика" checked={settings.trafficMonitor}
