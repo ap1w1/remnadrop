@@ -269,3 +269,41 @@ test('changed host membership fails atomically and a DNS sync failure records th
   assert.match(dnsSync.final().details[0].message, /IP ноды изменён/);
   assert.deepEqual(dnsSync.final().details.map(detail => detail.status), ['failed', 'skipped']);
 });
+
+
+test('failed DPI cannot hide hosts, change DNS or rotate IP even with continue policy', async()=>{
+  const f=fixture({dpiFailure:true});
+  await f.service.execute(rule({failure_policy:'continue',actions:[
+    {type:'dpi_check',hosts:[HOST],location:'russia'},
+    {type:'hide_hosts',hosts:[HOST]},
+    {type:'rotate_ip'},
+  ]}),EXECUTION);
+  assert.deepEqual(f.calls.map(call=>call[0]),['dpi.prepare','dpi.start','dpi.cancel']);
+  assert.equal(f.writes.some(write=>write.query.includes('UPDATE hosts SET')),false);
+  assert.deepEqual(f.final().details.map(detail=>detail.status),['failed','skipped','skipped']);
+});
+
+test('non-gated DPI never grants permission for IP rotation, even when started',async()=>{
+  const f=fixture();
+  await f.service.execute(rule({failure_policy:'continue',actions:[
+    {type:'dpi_check',hosts:[HOST],location:'russia'},
+    {type:'rotate_ip'},
+  ]}),EXECUTION);
+  assert.equal(f.calls.some(call=>call[0]==='ips.rotateNext'),false);
+  assert.equal(f.final().status,'partial_failure');
+});
+
+test('gated DPI persists waiting jobs and returns without executing failover',async()=>{
+  const f=fixture();
+  f.dpi.prepare=async input=>{f.calls.push(['dpi.prepare',input]);return {response:{id:'99999999-9999-4999-8999-999999999999',estimate:{estimated_cost:2.25}}}};
+  f.dpi.one=async()=>({response:{pop_ids:[2]}});
+  f.dpi.pops=async()=>[{id:2,region:'Moscow',name:'PoP-2'}];
+  await f.service.execute(rule({failure_policy:'stop',actions:[
+    {type:'dpi_check',hosts:[HOST],location:'russia',
+     gate:{minUnavailableRegions:1,timeoutMinutes:15}},
+    {type:'rotate_ip',when:'dpi_unavailable'},
+  ]}),EXECUTION);
+  assert.equal(f.calls.some(call=>call[0]==='ips.rotateNext'),false);
+  assert(f.writes.some(write=>write.query.includes("status='waiting_dpi'")));
+  assert(f.writes.some(write=>write.query.includes('SET execution_lease_until=NULL')));
+});
