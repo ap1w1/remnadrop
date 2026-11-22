@@ -282,6 +282,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
             state.matched = true; state.reason = 'Нода недоступна по последнему замеру';
         } else if (rule.trigger_type === 'node_offline') state.reason = 'Нода доступна';
         else if (rule.trigger_type === 'online_value') {
+            if (row.available !== 1) { state.reason = 'Нода недоступна: сравнение онлайна пропущено'; return state; }
             if (row.online === null || !Number.isFinite(row.online)) { state.reason = 'Нет достоверного значения онлайна'; return state; }
             const operator = rule.online_operator ?? 'lt'; const limit = rule.online_value ?? 10;
             state.matched = operator === 'gt' ? row.online > limit : operator === 'eq' ? row.online === limit : row.online < limit;
