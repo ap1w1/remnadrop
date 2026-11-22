@@ -42,6 +42,10 @@ export function LimiterPage(){
    if(!window.confirm('Добавить пользователя в исключения Limiter?'))return
    try{await instance.post(api+'/ignore/'+uuid);await refresh();setNotice('Пользователь добавлен в исключения.')}catch(e){setError(errMessage(e))}
  }
+ const unignore=async(uuid:string)=>{
+   try{await instance.post(api+'/unignore/'+uuid);await refresh();setNotice('Пользователь удалён из исключений.')}
+   catch(e){setError(errMessage(e))}
+ }
  const num=(key:keyof Settings,label:string,min:number,max:number,description?:string)=>
    <NumberInput size="sm" label={label} min={min} max={max} allowDecimal={false}
      description={description} value={settings[key] as number} onChange={v=>change(key,Number(v) as never)}/>
@@ -79,6 +83,15 @@ export function LimiterPage(){
        data={nodes.map(n=>({value:n.uuid,label:nodeOptionLabel(n)}))}/>
      <TextInput label="Исключённые IP (через запятую)" description="Указывайте отдельные адреса IPv4/IPv6."
        value={ignoredIpsText} onChange={e=>setIgnoredIpsText(e.currentTarget.value)}/>
+     {settings.ignoredUsers.length>0&&<Stack gap={4}>
+       <Text size="sm" fw={600}>Пользователи в исключениях</Text>
+       <Group gap="xs" wrap="wrap">
+         {settings.ignoredUsers.map(uuid=><Button key={uuid} size="compact-xs" variant="light" color="gray"
+           onClick={()=>void unignore(uuid)} aria-label={'Удалить из исключений '+uuid}>
+           {events.find(e=>e.user_uuid===uuid)?.username??uuid} ×
+         </Button>)}
+       </Group>
+     </Stack>
      {settings.mode==='auto'&&<Alert color="orange" title="Автоблокировка">При подтверждённом превышении Limiter отключит подписку через UsersService. Временная блокировка завершается автоматически, если установлен срок восстановления.</Alert>}
      <Group justify="end"><Button disabled={busy} variant="default" onClick={()=>void refresh()}>Отменить изменения</Button>
        <Button loading={busy} onClick={()=>void save()}>Сохранить настройки</Button></Group>
