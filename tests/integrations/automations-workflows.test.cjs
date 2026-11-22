@@ -126,16 +126,29 @@ test('ordered rotation dependencies, repeated rotation and node requirements are
   assert.throws(() => validateAutomation(rule({ trigger_type: 'interval', interval_minutes: 15, cooldown_minutes: 60 })), /не может быть больше/);
 });
 
+test('conditional DPI gate enforces safe IP/DNS branches and validates regional cost controls', () => {
+  const gate={type:'dpi_check',hosts:[HOST],location:'russia',
+    locations:[{location:'russia',pop_ids:[10,12]},{location:'china'}],
+    gate:{minUnavailableRegions:2,timeoutMinutes:15}};
+  const failover={type:'rotate_ip',when:'dpi_unavailable'};
+  assert.doesNotThrow(()=>validateAutomation(rule({actions:[gate,failover,dns({ipSource:'rotated',when:'dpi_unavailable'})]})));
+  assert.throws(()=>validateAutomation(rule({actions:[gate,{type:'rotate_ip'}]})),/только в ветке/);
+  assert.throws(()=>validateAutomation(rule({actions:[{type:'dpi_check',hosts:[HOST],location:'russia'},{type:'rotate_ip'}]})),/только после ожидания/);
+  assert.throws(()=>validateAutomation(rule({actions:[gate,{type:'rotate_ip',when:'dpi_unknown'}]})),/только в ветке/);
+  assert.throws(()=>validateAutomation(rule({actions:[{...gate,locations:[{location:'russia'},{location:'russia'}]}]})),/повторяться/);
+  assert.throws(()=>validateAutomation(rule({actions:[{...gate,gate:{minUnavailableRegions:0,timeoutMinutes:1}}]})),/порог регионов/);
+});
+
 test('preview reads targets and trigger state without reserving, charging, writing DNS or sending webhooks', async t => {
   const previous = process.env.AUTOMATIONS_WEBHOOK_SECRET;
   process.env.AUTOMATIONS_WEBHOOK_SECRET = 'fixture-signing-secret-with-at-least-32-characters';
   t.after(() => { if (previous === undefined) delete process.env.AUTOMATIONS_WEBHOOK_SECRET; else process.env.AUTOMATIONS_WEBHOOK_SECRET = previous; });
   const f = fixture();
   const input = rule({ actions: [
-    { type: 'dpi_check', hosts: [HOST], location: 'russia' },
-    { type: 'hide_hosts', hosts: [HOST] }, { type: 'show_hosts', hosts: [HOST] },
-    { type: 'rotate_ip', updateCloudflare: true }, dns({ ipSource: 'rotated' }), dns(),
-    { type: 'webhook', url: 'https://example.com/events' },
+    { type: 'dpi_check', hosts: [HOST], location: 'russia',gate:{minUnavailableRegions:2,timeoutMinutes:15} },
+    { type: 'hide_hosts', hosts: [HOST],when:'dpi_unavailable' }, { type: 'show_hosts', hosts: [HOST],when:'dpi_available' },
+    { type: 'rotate_ip', updateCloudflare: true,when:'dpi_unavailable' }, dns({ ipSource: 'rotated',when:'dpi_unavailable' }), dns({when:'dpi_unavailable'}),
+    { type: 'webhook', url: 'https://example.com/events',when:'dpi_unknown' },
   ] });
   const before = structuredClone(input);
   const result = (await f.service.preview(input, input)).response;
