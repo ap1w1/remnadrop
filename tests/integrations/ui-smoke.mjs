@@ -119,6 +119,7 @@ await context.route('**/*', async route => {
   } else if (pathname === '/api/limiter/settings') { if (method === 'PUT') Object.assign(limiterSettings, body); result = limiterSettings; }
   else if (pathname === '/api/limiter/settings/runtime') result = [{ Key: 'COOLDOWN', Title: 'Пауза между нарушениями', Display: '300', Kind: 1, Allowed: null, Overridden: true }];
   else if (pathname === '/api/limiter/status') result = { embedded: true, running: true, ready: true, lastCheck: now, pid: 100, version: '5.1.0', redisDatabase: 8 };
+  else if (pathname === '/api/limiter/outbound-webhook/status') result = {configured:false,destination:null,events:[],pending:0,failed:0,delivered:0};
   else if (pathname === '/api/limiter/credentials') result = { configured: false, telegramConfigured: false, maxmindConfigured: false, telegramChatId: '', telegramAdminIds: '', sharedHwidSquadUuids: [] };
   else if (pathname === '/api/limiter/events') result = limiterEvents;
   else if (pathname === '/api/limiter/summary') result = { count24h: 3, countWeek: 7, users24h: 1, liveAvailable: true, live: { violations: { Count24h: 3, CountWeek: 7, Top: [] }, heavyTraffic: [], lastCheck: now } };
@@ -243,6 +244,7 @@ try {
   await visible(page.getByRole('combobox', { name: 'Режим', exact: true }));
   await capture('limiter-settings-desktop');
   await page.getByRole('tab', { name: 'Уведомления', exact: true }).click();
+   await visible(page.getByRole('heading', { name: 'Исходящие вебхуки Limiter', exact: true }));
   const duplication = page.getByRole('switch', { name: /^Дублировать события и действия в Telegram/ });
   await visible(duplication);
   assert.equal(await duplication.isChecked(), true);
