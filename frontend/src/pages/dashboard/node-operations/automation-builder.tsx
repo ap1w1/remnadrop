@@ -267,7 +267,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                 {draft.trigger_type === 'manual' && <Text size="sm" c="dimmed">Сохраните последовательность действий и запускайте её одной кнопкой, когда это нужно.</Text>}
             </Stack>}
             {step === 1 && <Stack gap="md">
-                <div><Title order={4}>Что выполнить</Title><Text size="sm" c="dimmed" mt={4}>Действия выполняются сверху вниз. Порядок можно изменить стрелками.</Text></div>
+                <div><Title order={4}>Что выполнить</Title><Text size="sm" c="dimmed" mt={4}>Действия выполняются сверху вниз. После DPI можно задать отдельные ветки: недоступно, доступно или неопределённо. Без подтверждения недоступности IP/DNS не меняются.</Text></div>
                 {draft.actions.map((action, index) => <Card key={index} withBorder radius="md" p="md">
                     <Stack gap="md">
                         <Group justify="space-between" gap="xs" wrap="nowrap">
@@ -278,6 +278,17 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                                 <ActionIcon size={44} variant="subtle" color="red" aria-label={`Удалить действие ${index + 1}`} onClick={() => change({ actions: draft.actions.filter((_, position) => position !== index) })}><TbTrash size={17} /></ActionIcon>
                             </Group>
                         </Group>
+                        {draft.actions.slice(0,index).some(previous=>previous.type==='dpi_check'&&previous.gate) && action.type!=='dpi_check' && <Select
+                            label="Выполнить действие, когда" allowDeselect={false}
+                            value={action.when??'always'}
+                            data={[
+                                {value:'dpi_unavailable',label:'Недоступно в заданном числе регионов'},
+                                {value:'dpi_available',label:'Условие недоступности НЕ подтвердилось',disabled:['rotate_ip','cloudflare_dns','hide_hosts'].includes(action.type)},
+                                {value:'dpi_unknown',label:'Неопределённо или ошибка (без смены IP)',disabled:['rotate_ip','cloudflare_dns','hide_hosts'].includes(action.type)},
+                                {value:'always',label:'При любом результате (только безопасные действия)',disabled:['rotate_ip','cloudflare_dns','hide_hosts'].includes(action.type)},
+                            ]}
+                            onChange={value=>setAction(index,{...action,when:(value??'always') as AutomationAction['when']})}
+                        />}
                         {action.type === 'cloudflare_dns' && <DnsActionFields action={action} accounts={accounts} hasRotation={draft.actions.slice(0, index).some(item => item.type === 'rotate_ip')} onChange={value => setAction(index, value)} />}
                         {'hosts' in action && <>
                             <MultiSelect label="Хосты" placeholder={draft.node_uuid ? 'Выберите хосты' : 'Сначала выберите ноду на шаге «Условие»'} disabled={!draft.node_uuid}
@@ -299,7 +310,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                 <Group align="flex-end" grow>
                     <Select label="Добавить действие" placeholder="Выберите действие" value={addType} onChange={value => setAddType(value as AutomationAction['type'] | null)}
                         data={Object.entries(actionLabels).map(([value, label]) => ({ value, label, disabled: value === 'rotate_ip' && draft.actions.some(action => action.type === 'rotate_ip') }))} />
-                    <Button h={44} variant="light" leftSection={<TbPlus size={17} />} disabled={!addType || draft.actions.length >= 8} onClick={() => { if (addType) { change({ actions: [...draft.actions, emptyAction(addType)] }); setAddType(null) } }}>Добавить</Button>
+                    <Button h={44} variant="light" leftSection={<TbPlus size={17} />} disabled={!addType || draft.actions.length >= 8} onClick={() => { if (addType) { const next=emptyAction(addType); if (draft.actions.some(a=>a.type==='dpi_check'&&a.gate)) next.when=['rotate_ip','cloudflare_dns','hide_hosts'].includes(addType)?'dpi_unavailable':'dpi_available'; change({actions:[...draft.actions,next]});setAddType(null) } }}>Добавить</Button>
                 </Group>
             </Stack>}
             {step === 2 && <Stack gap="md">
