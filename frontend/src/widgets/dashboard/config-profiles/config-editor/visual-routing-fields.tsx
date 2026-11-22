@@ -80,7 +80,7 @@ export function VisualRoutingFields({config,onChange}:{config:Value;onChange:(va
      <Textarea autosize minRows={1} label="Source IP" value={list(rule.source)}
       onChange={e=>setRule(index,{source:split(e.currentTarget.value)})}/>
     </Stack></Accordion.Panel>
-   </Accordion>
+   </Accordion.Item></Accordion>
   </Stack></Card>)}
   {!rules.length&&<Text size="sm" c="dimmed">Правил пока нет. Добавьте первое правило.</Text>}
   <Group justify="space-between" align="flex-end">
@@ -118,6 +118,6 @@ export function VisualRoutingFields({config,onChange}:{config:Value;onChange:(va
     <Textarea label="Subject Selector" autosize minRows={1} value={list(observatory.subjectSelector)}
      onChange={e=>setObservatory({subjectSelector:split(e.currentTarget.value)})}/>
     <Text size="xs" c="dimmed">BurstObservatory и экспериментальные поля остаются в JSON без изменений.</Text>
-   </Stack></Accordion.Panel></Accordion>
+   </Stack></Accordion.Panel></Accordion.Item></Accordion>
  </Stack>
 }
