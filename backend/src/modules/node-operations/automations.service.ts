@@ -142,7 +142,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
     }
     async options() {
         const [nodes,hosts] = await Promise.all([
-            this.db.$queryRaw`SELECT uuid,name FROM nodes ORDER BY name`,
+            this.db.$queryRaw`SELECT uuid,name,address,country_code AS "countryCode" FROM nodes ORDER BY name`,
             this.db.$queryRaw`SELECT h.uuid,h.remark,h.address,h.is_hidden,
                 COALESCE(array_agg(hn.node_uuid) FILTER (WHERE hn.node_uuid IS NOT NULL),'{}'::uuid[]) AS node_uuids
                 FROM hosts h LEFT JOIN hosts_to_nodes hn ON hn.host_uuid=h.uuid GROUP BY h.uuid ORDER BY h.remark`,
