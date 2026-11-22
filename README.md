@@ -75,8 +75,11 @@ sudo remnadrop check
 sudo remnadrop update
 ```
 
-- `status` reports current revision and panel health.
+- `status` reports the repository revision, the running panel's image tag and actual image ID, and health.
 - `check` runs local upgrade preflight without downloading new revisions or restarting the panel.
-- `update` pulls the latest private `main` with `--ff-only`, exports a pinned Git snapshot, builds a new Docker image, checks new frontend/migration files, exports the current container for rollback, backs up and test-restores PostgreSQL, runs reviewed migrations, then checks health and installs the backup timer.
+- `update` pulls the latest private `main` with `--ff-only`, exports a pinned Git snapshot, builds a new Docker image, checks new frontend/migration files, exports the current container for rollback, backs up and test-restores PostgreSQL, runs reviewed migrations, then recreates only the panel and checks its image ID, health and HTTP response before reporting success. PostgreSQL and Redis are not recreated. The backup timer is then installed.
+- A repeated update of the same Git revision still recreates the panel: matching image tags do not prove that the running container uses the current image. IDs are compared using the same Docker daemon, including its containerd image store when enabled.
+- Compose paths are normalized without sorting, and repeated copies of the generated `compose.fork-auto.json` override are replaced by one entry at the end. Trailing LF/CRLF whitespace is handled; custom file order and repetitions are preserved. The next successful update repairs the existing managed duplicates automatically and saves `.panel-compose-files` only after deployment verification.
+- Deployment regressions can be checked without a Docker daemon or production database: `python3 -m unittest discover -s tests -v`.
 - The current production database is not automatically rolled back on errors. For production, rehearse on an isolated test system and retain the printed backup locations. Do not run an old image against a new schema without a verified rollback plan.
 - The CLI assumes the previously installed RemnaDrop layout with `/opt/remnawave`, `remnawave`, `remnawave-db`, and `remnawave-redis`. A clean GitHub import by itself does not install or upgrade the running service.

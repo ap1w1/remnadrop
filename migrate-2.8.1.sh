@@ -11,12 +11,18 @@ command -v docker >/dev/null
 command -v python3 >/dev/null
 exec 9>"$INSTALL_DIR/.panel-migration.lock"
 flock -n 9 || { echo 'Another migration is running'; exit 1; }
-docker image inspect "$IMAGE" >/dev/null
+TARGET_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE")
+[[ "$TARGET_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Target image ID is unavailable'; exit 1; }
+[[ -z "${PANEL_TARGET_IMAGE_ID:-}" || "$TARGET_IMAGE_ID" == "$PANEL_TARGET_IMAGE_ID" ]] || {
+  echo 'Target image changed after the updater verified it; refusing migration.'
+  exit 1
+}
+ORIGINAL_CONTAINER_ID=$(docker inspect -f '{{.Id}}' remnawave)
 VERSION=$(docker exec remnawave node -p 'require("/opt/app/package.json").version' 2>/dev/null || docker exec remnawave node -p 'require("/app/package.json").version')
 [[ "$VERSION" == 2.8.1 ]] || { echo "Unsupported source: $VERSION"; exit 1; }
 FILES=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' remnawave)
 [[ -n "$FILES" ]] || { echo 'Compose configuration not found'; exit 1; }
-BASE=${FILES//,/:}
+BASE=$(python3 "$SOURCE/scripts/compose-files.py" "${FILES//,/:}" --managed "$INSTALL_DIR/compose.fork-auto.json")
 OLD_IMAGE=$(docker inspect -f '{{.Image}}' remnawave)
 SOURCE_IMAGE=$(docker inspect -f '{{.Config.Image}}' remnawave)
 [[ "$SOURCE_IMAGE" == remnawave/backend:2.8.1 || "$MODE" == --update ]] || {
@@ -111,21 +117,52 @@ service = dict(image=image, pull_policy='never', init=True, working_dir='/app',
  'interval':'30s','timeout':'5s','retries':3,'start_period':'60s'})
 pathlib.Path(root, 'compose.fork-auto.json').write_text(json.dumps({'services':{'remnawave':service}}, indent=2))
 PY
-NEW="$BASE:$INSTALL_DIR/compose.fork-auto.json"
+NEW=$(python3 "$SOURCE/scripts/compose-files.py" "$BASE" --append "$INSTALL_DIR/compose.fork-auto.json")
 newdc() { COMPOSE_FILE="$NEW" docker compose --project-directory "$INSTALL_DIR" "$@"; }
 newdc config --quiet
+[[ "$(docker image inspect -f '{{.Id}}' "$IMAGE")" == "$TARGET_IMAGE_ID" ]] || {
+  echo 'Target image changed before migration; refusing to deploy it.'
+  false
+}
 SCHEMA_MAY_HAVE_CHANGED=1
 newdc run --rm --no-deps --entrypoint npm remnawave run migrate:deploy
-newdc up -d --no-deps remnawave
+[[ "$(docker image inspect -f '{{.Id}}' "$IMAGE")" == "$TARGET_IMAGE_ID" ]] || {
+  echo 'Target image changed during migration; refusing to start an unverified image.'
+  false
+}
+# A rebuilt tag can retain the same Compose configuration. Always replace the
+# panel container; a stop/start can leave its old root filesystem running.
+newdc up -d --no-deps --force-recreate --no-build --pull never remnawave
+DEPLOYED_CONTAINER_ID=$(docker inspect -f '{{.Id}}' remnawave)
+[[ "$DEPLOYED_CONTAINER_ID" != "$ORIGINAL_CONTAINER_ID" ]] || {
+  echo 'Panel container was not recreated; refusing to report a successful update.'
+  false
+}
 for attempt in $(seq 1 60); do
-  if docker exec remnawave node -e "fetch('http://127.0.0.1:3000/',{headers:{'X-Forwarded-For':'127.0.0.1','X-Forwarded-Proto':'https'}}).then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"; then
-    printf '%s\n' "$NEW" > "$INSTALL_DIR/.panel-compose-files"
-    echo "HTTP check passed. Backup: $BACKUP"
+  CURRENT_IMAGE_ID=$(docker inspect -f '{{.Image}}' remnawave)
+  [[ "$CURRENT_IMAGE_ID" == "$TARGET_IMAGE_ID" ]] || {
+    echo "Wrong running image: expected $TARGET_IMAGE_ID, got $CURRENT_IMAGE_ID"
+    false
+  }
+  [[ "$(docker inspect -f '{{.Id}}' remnawave)" == "$DEPLOYED_CONTAINER_ID" ]] || {
+    echo 'Panel container changed while checking the deployment.'
+    false
+  }
+  READY_STATE=$(docker inspect -f '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' remnawave)
+  case "$READY_STATE" in
+    'true healthy'|'true starting') ;;
+    *) echo "Panel is not ready: $READY_STATE"; false ;;
+  esac
+  if [[ "$READY_STATE" == 'true healthy' ]] && docker exec remnawave node -e "fetch('http://127.0.0.1:3000/',{headers:{'X-Forwarded-For':'127.0.0.1','X-Forwarded-Proto':'https'}}).then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"; then
+    COMPOSE_FILES_TEMP=$(mktemp "$INSTALL_DIR/.panel-compose-files.XXXXXXXX")
+    printf '%s\n' "$NEW" > "$COMPOSE_FILES_TEMP"
+    mv -f -- "$COMPOSE_FILES_TEMP" "$INSTALL_DIR/.panel-compose-files"
+    echo "Image ID, health and HTTP checks passed. Backup: $BACKUP"
     printf 'Rollback: sudo bash %q/rollback.sh %q\n' "$SOURCE" "$BACKUP"
     printf 'For future operations: export COMPOSE_FILE="$(cat %q/.panel-compose-files)"\n' "$INSTALL_DIR"
     exit 0
   fi
   sleep 2
 done
-echo 'API startup check failed; inspect docker logs remnawave.'
-exit 1
+echo 'Panel health/HTTP startup check failed; inspect docker logs remnawave.'
+false
