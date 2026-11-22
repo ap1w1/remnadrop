@@ -9,6 +9,7 @@ import { UsersService } from '@modules/users/users.service';
 import { CreateUserRequestDto } from '@modules/users/dtos/create-user.dto';
 import { randomUUID } from 'node:crypto';
 import { DpiCredentialsService } from './dpi-credentials.service';
+import { safeDpiResponse } from './dpi-response-sanitizer';
 
 export type DpiLocation = 'russia'|'russia_mobile'|'china'|'iran'|'turkmenistan';
 const LOCATIONS = ['russia','russia_mobile','china','iran','turkmenistan'];
@@ -103,7 +104,7 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     return {response:{nodes,hosts}};
   }
   async list(){return {response:await this.db.$queryRaw`SELECT id,remote_id,host_uuids,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,created_at,updated_at FROM dpi_check_jobs ORDER BY created_at DESC LIMIT 100`};}
-  async one(id:string){const rows=await this.db.$queryRaw<any[]>`SELECT id,remote_id,host_uuids,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,results,created_at,updated_at FROM dpi_check_jobs WHERE id=${id}::uuid`;
+  async one(id:string){const rows=await this.db.$queryRaw<any[]>`SELECT id,remote_id,host_uuids,location,pop_ids,status,progress_done,progress_total,estimated_cost::float8,actual_cost::float8,error,results,remote_response,created_at,updated_at FROM dpi_check_jobs WHERE id=${id}::uuid`;
     if(!rows.length)throw new NotFoundException();return {response:rows[0]};}
   private async job(id:string){const rows=await this.db.$queryRaw<Job[]>`SELECT * FROM dpi_check_jobs WHERE id=${id}::uuid`;if(!rows.length)throw new NotFoundException();return rows[0];}
   private async keys(job:Job){
@@ -189,8 +190,12 @@ export class DpiCheckerService implements OnModuleInit, OnModuleDestroy {
     const status=response.status==='completed'?'completed':response.status==='failed'?'failed':response.status==='cancelled'?'cancelled':response.status==='running'?'running':'pending';
     const done=Number(response.progress?.done??0),total=Number(response.progress?.total??0);
     // The returned URIs are credentials: discard these from persisted results.
-    const results=Array.isArray(response.results)?response.results.map((r:Record<string,unknown>)=>{const {uri,...safe}=r;return safe;}):[];
-    await this.db.$executeRaw`UPDATE dpi_check_jobs SET status=${status},progress_done=${done},progress_total=${total},actual_cost=${response.usd_cost??null},results=${JSON.stringify(results)}::jsonb,error=${response.error??null},updated_at=now() WHERE id=${id}::uuid`;
+    const snapshot=safeDpiResponse(response);
+    const results=Array.isArray(snapshot.results)?snapshot.results:[];
+    const summary=JSON.stringify(snapshot);
+    // Avoid unbounded DB growth and malicious response amplification.
+    const safeSnapshot=summary.length<=8*1024*1024 ? snapshot : {status,progress:response.progress??null,error:'Provider response exceeded 8 MiB; detailed JSON truncated',results:results.slice(0,500)};
+    await this.db.$executeRaw`UPDATE dpi_check_jobs SET status=${status},progress_done=${done},progress_total=${total},actual_cost=${response.usd_cost??null},results=${JSON.stringify(results)}::jsonb,remote_response=${JSON.stringify(safeSnapshot)}::jsonb,error=${response.error??null},updated_at=now() WHERE id=${id}::uuid`;
     return status;
   }
   async cancel(id:string){const job=await this.job(id);if(job.status==='prepared'){await this.db.$executeRaw`UPDATE dpi_check_jobs SET status='cancelled' WHERE id=${id}::uuid`;await this.cleanup(job);return {response:{success:true}};}
