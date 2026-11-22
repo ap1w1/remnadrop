@@ -1,5 +1,5 @@
 export type AutomationAction =
-    | { type: 'dpi_check'; hosts: string[]; location: string }
+    | { type: 'dpi_check'; hosts: string[]; location: string; pop_ids?: number[] }
     | { type: 'hide_hosts' | 'show_hosts'; hosts: string[] }
     | { type: 'rotate_ip'; updateCloudflare?: boolean }
     | { type: 'webhook'; url: string }
