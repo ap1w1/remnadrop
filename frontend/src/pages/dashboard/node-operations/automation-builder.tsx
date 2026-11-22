@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { TbArrowDown, TbArrowUp, TbCheck, TbPlayerPlay, TbPlus, TbShieldCheck, TbTrash } from 'react-icons/tb'
 import { instance } from '@shared/api/axios'
+import { nodeOptionLabel } from '@shared/utils/misc/node-option-label'
 import {
     actionLabels, apiError, automationApi, freshAutomation, triggerLabels, triggerSummary,
     type AutomationAction, type AutomationHost, type AutomationInput, type AutomationNode,
@@ -158,7 +159,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                 <Select label="Когда запускать" allowDeselect={false} value={draft.trigger_type} data={Object.entries(triggerLabels).map(([value, label]) => ({ value, label }))}
                     onChange={value => change({ trigger_type: value as AutomationInput['trigger_type'], cooldown_minutes: value === 'interval' ? Math.min(draft.cooldown_minutes, draft.interval_minutes) : draft.cooldown_minutes })} />
                 <Select label={requiresNode ? 'Нода' : 'Нода (если нужна для действий)'} required={requiresNode} clearable={!requiresNode} searchable
-                    placeholder="Выберите ноду" data={nodes.map(node => ({ value: node.uuid, label: node.name }))} value={draft.node_uuid}
+                    placeholder="Выберите ноду" data={nodes.map(node => ({ value: node.uuid, label: nodeOptionLabel(node) }))} value={draft.node_uuid}
                     onChange={value => change({ node_uuid: value, actions: draft.actions.map(action => 'hosts' in action ? { ...action, hosts: [] } : action) })} />
                 {draft.trigger_type === 'online_drop' && <>
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
@@ -201,7 +202,7 @@ export function AutomationBuilder({ opened, initial, initialStep = 0, editing, n
                             {action.type !== 'dpi_check' && <Text size="xs" c="dimmed">Общие хосты нескольких нод исключены, чтобы не менять доступность других нод.</Text>}
                         </>}
                         {action.type === 'dpi_check' && <>
-                            <Select label="Регион проверки" allowDeselect={false} value={action.location}
+                            <Select label="Регион проверки" searchable allowDeselect={false} value={action.location}
                                 data={[{ value: 'russia', label: 'Россия' }, { value: 'russia_mobile', label: 'Россия · мобильные сети' }, { value: 'china', label: 'Китай' }, { value: 'iran', label: 'Иран' }, { value: 'turkmenistan', label: 'Туркменистан' }]}
                                 onChange={value => setAction(index, { ...action, location: value || 'russia' })} />
                             <Text size="sm" c="orange">Платная проверка. Лимит на действие: ${dpiCostLimit}. Результат проверки появится в DPI Checker.</Text>
