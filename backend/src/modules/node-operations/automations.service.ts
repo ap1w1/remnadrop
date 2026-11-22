@@ -193,7 +193,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
     async executions(query: { ruleId?: string; status?: string; limit?: string; before?: string; cursor?:string } = {}) {
         if (query.ruleId) assertId(query.ruleId);
         if (query.cursor) assertId(query.cursor,'курсора');
-        if (query.status && !['running','completed','partial_failure','failed'].includes(query.status)) throw new BadRequestException('Неизвестный статус');
+        if (query.status && !['running','waiting_dpi','completed','partial_failure','failed'].includes(query.status)) throw new BadRequestException('Неизвестный статус');
         const limit = query.limit === undefined ? 50 : Number(query.limit);
         if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new BadRequestException('Размер страницы: 1–100');
         if (query.before && Number.isNaN(Date.parse(query.before))) throw new BadRequestException('Некорректная дата');
@@ -258,7 +258,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
                 drop_percent=${rule.drop_percent},min_online=${rule.min_online},duration_minutes=${rule.duration_minutes},
                 cooldown_minutes=${rule.cooldown_minutes},interval_minutes=${rule.interval_minutes},failure_policy=${rule.failure_policy},
                 actions=${JSON.stringify(rule.actions)}::jsonb,updated_at=now(),revision=revision+1,pending_since=NULL
-            WHERE id=${existing.id}::uuid AND (execution_lease_until IS NULL OR execution_lease_until<now())`;
+            WHERE id=${existing.id}::uuid AND active_execution_id IS NULL`;
         if (!changed) throw new ConflictException('Правило выполняется. Дождитесь завершения перед редактированием');
         return this.list();
     }
@@ -280,8 +280,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
     }
     async remove(id: string) {
         await this.one(id);
-        const changed = await this.db.$executeRaw`DELETE FROM node_automation_rules WHERE id=${id}::uuid
-            AND (execution_lease_until IS NULL OR execution_lease_until<now())`;
+        const changed = await this.db.$executeRaw`DELETE FROM node_automation_rules WHERE id=${id}::uuid AND active_execution_id IS NULL`;
         if (!changed) throw new ConflictException('Правило выполняется. Дождитесь завершения перед удалением');
         return { response: { success: true } };
     }
@@ -392,7 +391,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
             WITH claimed AS (
                 UPDATE node_automation_rules SET active_execution_id=${id}::uuid,
                     execution_lease_until=now()+interval '15 minutes',last_run_at=now(),pending_since=NULL
-                WHERE id=${rule.id}::uuid AND revision=${rule.revision}
+                WHERE id=${rule.id}::uuid AND revision=${rule.revision} AND active_execution_id IS NULL
                     AND (execution_lease_until IS NULL OR execution_lease_until<now())
                     AND (${source}='manual' OR (enabled AND
                         (last_run_at IS NULL OR last_run_at<now()-${rule.cooldown_minutes}::int*interval '1 minute')
@@ -418,6 +417,230 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
         void this.execute(rule,executionId).catch(error => this.logger.error(`Execution ${executionId}: ${errorMessage(error)}`));
         return { response: { executionId, status: 'running' } };
     }
+    private async prepareDpiGate(action: Extract<AutomationAction, {type:'dpi_check'}>) {
+        const checks = action.locations?.length ? action.locations : [{location:action.location,pop_ids:action.pop_ids}];
+        const created: {id:string;location:string;popIds:number[];popRegions:Record<string,string>;
+            popNames:Record<string,string>;hostCount:number;cost:number}[] = [];
+        try {
+            for (const check of checks) {
+                const prepared = await this.dpi.prepare({hosts:action.hosts,location:check.location,pop_ids:check.pop_ids});
+                const jobId = prepared.response.id;
+                const job = (await this.dpi.one(jobId)).response as {pop_ids:number[]};
+                const cost = Number((prepared.response.estimate as {estimated_cost?:unknown})?.estimated_cost ?? NaN);
+                const popIds = job.pop_ids;
+                if (!Array.isArray(popIds) || !popIds.length || !Number.isFinite(cost) || cost < 0)
+                    throw new BadRequestException('DPI Checker не вернул допустимую цену или список точек проверки');
+                const entry = {id:jobId,location:check.location,popIds,
+                    popRegions:{} as Record<string,string>,popNames:{} as Record<string,string>,
+                    hostCount:action.hosts.length,cost};
+                created.push(entry);
+                // PoP metadata is needed to classify distinct *geographic regions*.
+                // If the API omits it, verdict will remain unknown and failover is forbidden.
+                try {
+                    const data = await this.dpi.pops(check.location,false);
+                    const pops: {id:number;region?:string;city?:string;name?:string}[] =
+                        Array.isArray(data) ? data : Array.isArray(data?.pops) ? data.pops : [];
+                    for (const pop of pops) {
+                        if (!popIds.includes(pop.id)) continue;
+                        if (pop.region || pop.city) entry.popRegions[String(pop.id)] = String(pop.region || pop.city);
+                        if (pop.name) entry.popNames[String(pop.id)] = pop.name;
+                    }
+                } catch (error) {
+                    this.logger.warn('Не удалось загрузить метаданные PoP: '+errorMessage(error));
+                }
+            }
+            const total = created.reduce((sum,job)=>sum+job.cost,0);
+            if (total > this.dpiCostLimit()+1e-6)
+                throw new BadRequestException('Суммарная стоимость DPI-проверок превышает предел 
+        const details: ActionDetail[] = [];
+        let rotation: {previousIp:string;newIp:string}|null = null, failure = false, leaseLost = false, heartbeatBusy = false;
+        const heartbeat = setInterval(() => {
+            if (heartbeatBusy || leaseLost) return;
+            heartbeatBusy = true;
+            void this.db.$executeRaw`UPDATE node_automation_rules SET execution_lease_until=now()+interval '15 minutes'
+                WHERE id=${rule.id}::uuid AND active_execution_id=${id}::uuid AND execution_lease_until>now()`
+                .then(changed => { if (!changed) leaseLost = true; })
+                .catch(error => this.logger.warn(`Execution heartbeat ${id}: ${errorMessage(error)}`))
+                .finally(() => { heartbeatBusy = false; });
+        },30000);
+        heartbeat.unref();
+        try {
+            for (const [index,action] of rule.actions.entries()) {
+                const startedAt = new Date().toISOString();
+                if (leaseLost || (failure && rule.failure_policy === 'stop')) {
+                    failure = true;
+                    details.push({index,type:action.type,title:ACTION_TITLES[action.type],success:false,status:'skipped',message:leaseLost ? 'Пропущено: выполнение прервано' : 'Пропущено после ошибки предыдущего действия',startedAt,finishedAt:startedAt});
+                    continue;
+                }
+                try {
+                    const owned = await this.db.$executeRaw`UPDATE node_automation_rules SET execution_lease_until=now()+interval '15 minutes' WHERE id=${rule.id}::uuid AND active_execution_id=${id}::uuid AND execution_lease_until>now()`;
+                    if (!owned) { leaseLost = true; throw new ConflictException('Выполнение прервано: право на запуск больше не принадлежит этой операции'); }
+                    let message = '';
+                    if (action.type === 'dpi_check') {
+                        const prepared = await this.dpi.prepare({hosts:action.hosts,location:action.location,pop_ids:action.pop_ids});
+                        try { await this.dpi.start(prepared.response.id,this.dpiCostLimit()); }
+                        catch (error) { await this.dpi.cancel(prepared.response.id).catch(() => undefined); throw error; }
+                        message = `Проверка запущена: ${prepared.response.id}`;
+                    } else if (action.type === 'rotate_ip') {
+                        const result = (await this.ips.rotateNext(rule.node_uuid!,'automation')).response as {success:boolean;previousIp?:string;newIp?:string};
+                        if (!result.success || !result.previousIp || !result.newIp) throw new ConflictException('IP не изменён: проверьте активный адрес и запасные IP');
+                        rotation = {previousIp:result.previousIp,newIp:result.newIp}; message = `${rotation.previousIp} → ${rotation.newIp}`;
+                        if (action.updateCloudflare) {
+                            try { const sync = await this.cf.syncAfterRotation(rule.node_uuid!,rotation.previousIp,rotation.newIp); message += `; DNS-записей обновлено: ${sync.updated}`; }
+                            catch (error) { throw new Error(`IP ноды изменён (${message}), обновление DNS не выполнено: ${errorMessage(error)}`); }
+                        }
+                    } else if (action.type === 'cloudflare_dns') {
+                        if (action.ipSource === 'rotated' && !rotation) throw new ConflictException('Предыдущее действие не вернуло новый IP ноды');
+                        const newIp = action.ipSource === 'rotated' ? rotation!.newIp : action.newIp!;
+                        const expectedOldIp = action.ipSource === 'rotated' ? rotation!.previousIp : action.expectedOldIp;
+                        const result = (await this.cf.updateRecordIp({...action,newIp,expectedOldIp},'automation')).response;
+                        message = `DNS → ${newIp}${result.noop ? ' (адрес уже совпадает)' : ''}`;
+                        if ('auditRecorded' in result && result.auditRecorded === false) message += '; журнал Cloudflare не записан';
+                    } else if (action.type === 'hide_hosts' || action.type === 'show_hosts') {
+                        const changed = await this.db.$executeRaw(Prisma.sql`
+                            WITH eligible AS (SELECT h.uuid FROM hosts h WHERE h.uuid IN (${Prisma.join(action.hosts.map(host => Prisma.sql`${host}::uuid`))})
+                                AND EXISTS (SELECT 1 FROM hosts_to_nodes hn WHERE hn.host_uuid=h.uuid AND hn.node_uuid=${rule.node_uuid}::uuid)
+                                AND (SELECT count(*) FROM hosts_to_nodes hn WHERE hn.host_uuid=h.uuid)=1)
+                            UPDATE hosts SET is_hidden=${action.type === 'hide_hosts'}
+                                WHERE uuid IN (SELECT uuid FROM eligible) AND (SELECT count(*) FROM eligible)=${action.hosts.length}`);
+                        if (changed !== action.hosts.length) throw new ConflictException('Хосты не изменены: привязки изменились или хост используется несколькими нодами');
+                        message = `${action.type === 'hide_hosts' ? 'Скрыто' : 'Показано'} хостов: ${changed}`;
+                    } else if (action.type === 'webhook') {
+                        const secret = process.env.AUTOMATIONS_WEBHOOK_SECRET;
+                        if (!secret || secret.length < 32) throw new Error('Не настроен ключ подписи вебхуков');
+                        await postSignedWebhook(action.url,JSON.stringify({event:'NODE_AUTOMATION_TRIGGERED',nodeUuid:rule.node_uuid,ruleId:rule.id,executionId:id}),secret,id);
+                        message = 'Вебхук доставлен';
+                    }
+                    details.push({index,type:action.type,title:ACTION_TITLES[action.type],success:true,status:'completed',message,startedAt,finishedAt:new Date().toISOString()});
+                } catch (error) {
+                    failure = true;
+                    details.push({index,type:action.type,title:ACTION_TITLES[action.type],success:false,status:'failed',message:errorMessage(error),startedAt,finishedAt:new Date().toISOString()});
+                }
+                await this.db.$executeRaw`UPDATE node_automation_executions SET details=${JSON.stringify(details)}::jsonb WHERE id=${id}::uuid AND status='running'`;
+            }
+            const status = failure ? (details.some(detail => detail.success) ? 'partial_failure' : 'failed') : 'completed';
+            await this.db.$executeRaw`UPDATE node_automation_executions SET status=${status},finished_at=now(),details=${JSON.stringify(details)}::jsonb WHERE id=${id}::uuid AND status='running'`;
+        } catch (error) {
+            await this.db.$executeRaw`UPDATE node_automation_executions SET status='failed',finished_at=now(),details=${JSON.stringify([
+                ...details,{index:details.length,type:'execution',title:'Выполнение',success:false,status:'failed',message:errorMessage(error),startedAt:new Date().toISOString(),finishedAt:new Date().toISOString()},
+            ])}::jsonb WHERE id=${id}::uuid AND status='running'`.catch(() => undefined);
+            throw error;
+        } finally {
+            clearInterval(heartbeat);
+            await this.db.$executeRaw`UPDATE node_automation_rules SET active_execution_id=NULL,execution_lease_until=NULL WHERE id=${rule.id}::uuid AND active_execution_id=${id}::uuid`;
+        }
+    }
+    async tick() {
+        if (this.busy) return;
+        this.busy = true;
+        try {
+            await this.db.$executeRaw`UPDATE node_automation_executions e SET status='failed',finished_at=now(),
+                details=e.details || '[{"type":"execution","title":"Выполнение прервано","status":"failed","success":false,"message":"Процесс не завершил выполнение. Проверьте журнал перед повторным запуском."}]'::jsonb
+                FROM node_automation_rules r WHERE e.id=r.active_execution_id AND e.status='running' AND r.execution_lease_until<now()`;
+            await this.resumeDpiGates();
+            const rules = await this.db.$queryRaw<Rule[]>`SELECT * FROM node_automation_rules WHERE enabled AND trigger_type<>'manual' ORDER BY updated_at`;
+            for (const rule of rules) {
+                try {
+                    const state = await this.evaluate(rule);
+                    if (!state.matched) {
+                        if (rule.pending_since) await this.db.$executeRaw`UPDATE node_automation_rules SET pending_since=NULL WHERE id=${rule.id}::uuid AND revision=${rule.revision}`;
+                        continue;
+                    }
+                    if (rule.trigger_type !== 'interval' && !rule.pending_since) {
+                        await this.db.$executeRaw`UPDATE node_automation_rules SET pending_since=now() WHERE id=${rule.id}::uuid AND enabled AND pending_since IS NULL AND revision=${rule.revision}`;
+                        continue;
+                    }
+                    if (!state.ready) continue;
+                    const executionId = await this.claim(rule,'automatic',state);
+                    if (executionId) await this.execute(rule,executionId);
+                } catch (error) { this.logger.warn(`Rule ${rule.id}: ${errorMessage(error)}`); }
+            }
+            const periodic = await this.db.$queryRaw<{node_uuid:string}[]>`SELECT node_uuid FROM node_ip_pool WHERE is_active AND rotation_minutes IS NOT NULL
+                AND (rotated_at IS NULL OR rotated_at<now()-rotation_minutes*interval '1 minute') LIMIT 30`;
+            for (const row of periodic) {
+                try { await this.ips.rotateNext(row.node_uuid,'periodic'); }
+                catch (error) { this.logger.warn(`Periodic IP rotation ${row.node_uuid}: ${errorMessage(error)}`); }
+            }
+        } catch (error) { this.logger.warn(errorMessage(error)); }
+        finally { this.busy = false; }
+    }
+}
++this.dpiCostLimit());
+            let spent = 0;
+            for (const job of created) {
+                await this.dpi.start(job.id,Math.max(0,this.dpiCostLimit()-spent));
+                spent += job.cost;
+            }
+            return created.map(({cost,...job})=>job);
+        } catch (error) {
+            // Cancel only prepared/queued checks. A completed charge cannot be undone.
+            for (const job of created) await this.dpi.cancel(job.id).catch(()=>undefined);
+            throw error;
+        }
+    }
+
+    /** Resume a persisted DPI gate after restart; only confirmed results unlock a branch. */
+    private async resumeDpiGates() {
+        const pending = await this.db.$queryRaw<{id:string;rule_id:string|null;source:string;details:ActionDetail[]}[]>`
+            SELECT id,rule_id,source,details FROM node_automation_executions
+            WHERE status='waiting_dpi' ORDER BY started_at LIMIT 25`;
+        for (const execution of pending) {
+            if (!execution.rule_id) continue;
+            let claimed=false;
+            try {
+                const oldDetails=Array.isArray(execution.details)?execution.details:[];
+                const waiting=oldDetails.find(detail=>detail.type==='dpi_check'&&detail.status==='pending');
+                if (!waiting || !waiting.jobs?.length) throw new Error('Нет сохранённых заданий DPI');
+                const actionIndex=waiting.index;
+                const rule=await this.one(execution.rule_id);
+                const action=rule.actions[actionIndex] as Extract<AutomationAction,{type:'dpi_check'}> | undefined;
+                if (!action || action.type!=='dpi_check' || !action.gate) throw new Error('Правило DPI изменилось во время ожидания');
+                const timeout = Date.now() - Date.parse(waiting.startedAt) > action.gate.timeoutMinutes*60000;
+                const evidence:DpiCheckEvidence[]=[];
+                let complete=true;
+                for (const meta of waiting.jobs) {
+                    const job=(await this.dpi.one(meta.id)).response as {status:string;results:unknown;pop_ids:number[]};
+                    if (job.status==='pending'||job.status==='running'||job.status==='prepared') complete=false;
+                    evidence.push({location:meta.location,status:job.status,pop_ids:meta.popIds,
+                        popRegions:meta.popRegions,popNames:meta.popNames,results:job.results,hostCount:meta.hostCount});
+                }
+                if (!complete && !timeout) continue;
+                const acquired=await this.db.$executeRaw`
+                    UPDATE node_automation_rules SET execution_lease_until=now()+interval '15 minutes'
+                    WHERE id=${rule.id}::uuid AND active_execution_id=${execution.id}::uuid
+                      AND (execution_lease_until IS NULL OR execution_lease_until<now())`;
+                if (!acquired) continue;
+                claimed=true;
+                // Disabling a rule while its paid DPI measurement runs MUST prevent automatic failover.
+                if (execution.source==='automatic' && !rule.enabled)
+                    throw new Error('Правило отключено во время ожидания DPI');
+                const result = complete ? evaluateDpiRegions(evidence,action.gate.minUnavailableRegions) :
+                    {outcome:'unknown' as const,unavailableRegions:0,availableRegions:0,unknownRegions:1,
+                        totalRegions:0,details:['Время ожидания DPI истекло']};
+                const next = oldDetails.map(detail => detail === waiting ? {
+                    ...detail,status:'completed' as const,success:result.outcome!=='unknown',
+                    outcome:result.outcome,finishedAt:new Date().toISOString(),
+                    message:`DPI: ${result.outcome}; недоступно регионов ${result.unavailableRegions}, доступно ${result.availableRegions}, неопределённо ${result.unknownRegions}. ${result.details.join('; ').slice(0,500)}`,
+                } : detail);
+                const updated=await this.db.$executeRaw`
+                    UPDATE node_automation_executions SET status='running',details=${JSON.stringify(next)}::jsonb
+                    WHERE id=${execution.id}::uuid AND status='waiting_dpi'`;
+                if (!updated) continue;
+                await this.execute(rule,execution.id,next);
+            } catch (error) {
+                this.logger.warn(`DPI gate ${execution.id}: ${errorMessage(error)}`);
+                if (claimed) {
+                    await this.db.$executeRaw`UPDATE node_automation_executions
+                        SET status='failed',finished_at=now(),
+                        details=details || ${JSON.stringify([{type:'execution',title:'DPI-проверка',status:'failed',success:false,message:'Невозможно завершить проверку. Failover не выполнялся.',startedAt:new Date().toISOString(),finishedAt:new Date().toISOString()}])}::jsonb
+                        WHERE id=${execution.id}::uuid AND status IN ('waiting_dpi','running')`.catch(()=>undefined);
+                    await this.db.$executeRaw`UPDATE node_automation_rules SET active_execution_id=NULL,execution_lease_until=NULL
+                        WHERE id=${execution.rule_id}::uuid AND active_execution_id=${execution.id}::uuid`.catch(()=>undefined);
+                }
+            }
+        }
+    }
+
     private async execute(rule: Rule, id: string) {
         const details: ActionDetail[] = [];
         let rotation: {previousIp:string;newIp:string}|null = null, failure = false, leaseLost = false, heartbeatBusy = false;
