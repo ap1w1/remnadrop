@@ -1,3 +1,5 @@
+FROM ghcr.io/syvlech/remnawave-limiter:c5ce367 AS limiter-upstream
+
 FROM node:24.22.3-trixie-slim AS frontend-build
 WORKDIR /build
 COPY frontend/package*.json ./
@@ -34,5 +36,9 @@ RUN NODE_OPTIONS=--max-old-space-size=3072 npm run build && npm run build:seed
 
 FROM backend-build AS development
 ENV NODE_ENV=production
+# Original upstream Limiter 5.1.0 binary is embedded in the SAME panel image.
+# It is started and stopped by NestJS LimiterRunnerService, not another container.
+COPY --from=limiter-upstream /usr/local/bin/remnawave-limiter /usr/local/bin/remnawave-limiter
+RUN mkdir -p /var/lib/remnawave/limiter/geoip && chmod 755 /usr/local/bin/remnawave-limiter
 COPY backend/configs /var/lib/remnawave/configs
 CMD ["node", "dist/src/main.js"]
