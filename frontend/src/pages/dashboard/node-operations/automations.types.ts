@@ -20,7 +20,7 @@ export type AutomationRule = AutomationInput & {
     last_status: string | null; last_finished_at: string | null
 }
 export type AutomationHost = { uuid: string; remark: string; address: string; is_hidden: boolean; node_uuids: string[] }
-export type AutomationNode = { uuid: string; name: string }
+export type AutomationNode = { uuid: string; name: string; address?: string | null; countryCode?: string | null }
 export type CloudflareAccount = { id: string; name: string }
 export type ExecutionDetail = {
     index?: number; type: string; title?: string; success: boolean; status?: string;
