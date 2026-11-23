@@ -71,6 +71,10 @@ export const EVENTS = {
     TORRENT_BLOCKER: {
         REPORT: 'torrent_blocker.report',
     },
+    SSL: {
+        EXPIRING: 'ssl.expiring',
+        EXPIRED: 'ssl.expired',
+    },
     CATCH_ALL_USER_EVENTS: 'user.*',
     CATCH_ALL_USER_HWID_DEVICES_EVENTS: 'user_hwid_devices.*',
     CATCH_ALL_NODE_EVENTS: 'node.*',
@@ -90,6 +94,7 @@ export type TUserHwidDevicesEvents =
 
 export type TTorrentBlockerEvents =
     (typeof EVENTS.TORRENT_BLOCKER)[keyof typeof EVENTS.TORRENT_BLOCKER];
+export type TSslEvents = (typeof EVENTS.SSL)[keyof typeof EVENTS.SSL];
 
 export type TAllEvents =
     | TUserEvents
@@ -98,7 +103,8 @@ export type TAllEvents =
     | TErrorsEvents
     | TCRMEvents
     | TUserHwidDevicesEvents
-    | TTorrentBlockerEvents;
+    | TTorrentBlockerEvents
+    | TSslEvents;
 export type TAllEventChannels = 'telegram' | 'webhook';
 
 export const EVENTS_SCOPES = {
@@ -109,6 +115,7 @@ export const EVENTS_SCOPES = {
     ERRORS: 'errors',
     CRM: 'crm',
     TORRENT_BLOCKER: 'torrent_blocker',
+    SSL: 'ssl',
 } as const;
 
 export type TEventsScope = (typeof EVENTS_SCOPES)[keyof typeof EVENTS_SCOPES];

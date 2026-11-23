@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } = require('node:crypto');
+const { createCipheriv, createDecipheriv, createHash, createHmac, createECDH, randomBytes, randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createRequire } = require('node:module');
@@ -260,6 +260,9 @@ async function automationScopeSmoke(token) {
     assert.equal(typeof created.token, 'string');
     try {
       await request('/api/node-automations/options', { token: created.token });
+      for (const path of ['/api/panel-events', '/api/panel-events/preferences', '/api/panel-events/push/config', '/api/ssl-certificates']) {
+        await request(path, { token: created.token, expected: 403 });
+      }
       for (const [method, path, body] of [
         ['POST', '/api/node-automations', {}],
         ['POST', '/api/node-automations/preview', {}],
@@ -319,6 +322,59 @@ async function limiterEngineSmoke(token) {
   console.log('PASS built Go engine without Telegram, shared temporary ignore/block/restore state, idempotency, audit and shutdown');
 }
 
+async function panelNotificationApiSmoke(token) {
+  for (const path of ['/api/panel-events/summary','/api/panel-events/preferences','/api/panel-events/push/config','/api/ssl-certificates']) {
+    await request(path, { expected: 401 });
+  }
+  const preferences = (await request('/api/panel-events/preferences', { token })).response;
+  assert.equal(preferences.browserEnabled, false);
+  assert.equal(preferences.pushEnabled, false);
+  assert(preferences.eventTypes.includes('ssl.expiring'));
+  const selection = { browserEnabled: true, pushEnabled: false, eventTypes: ['ssl.expiring','node.connection_lost'] };
+  assert.deepEqual((await request('/api/panel-events/preferences', { method: 'PUT', token, body: selection })).response,
+    { ...selection, adminUuid: preferences.adminUuid });
+  await request('/api/panel-events/preferences', { method: 'PUT', token, body: { ...selection, eventTypes: ['invalid.type'] }, expected: 400 });
+
+  const suffix = randomUUID();
+  const append = async label => (await db.$queryRaw`SELECT panel_append_event('ssl.expiring','warning','API fixture','Synthetic event',NULL,NULL,
+    ${`api-events:${suffix}:${label}`},'{}'::jsonb,clock_timestamp()) AS id`)[0].id;
+  const firstId = await append('before-read');
+  const summary = (await request('/api/panel-events/summary', { token })).response;
+  assert.equal(typeof summary.latestSequence, 'string');
+  const laterId = await append('after-read-watermark');
+  const marked = (await request('/api/panel-events/read', { method: 'POST', token, body: { throughSequence: summary.latestSequence }, expected: 201 })).response;
+  assert(marked.unreadCount >= 1, 'New arrivals after captured watermark must remain unread');
+  const feed = (await request('/api/panel-events?type=ssl.expiring&limit=50', { token })).response;
+  assert(feed.items.some(event => event.id === firstId && event.isRead));
+  assert(feed.items.some(event => event.id === laterId && !event.isRead));
+  await request('/api/panel-events?after=90071992547409920000', { token, expected: 400 });
+
+  const certInput = { name: 'API TLS fixture', domains: ['api.example.invalid'], nodeUuids: [fixtureNode],
+    expiresAt: new Date(Date.now()+3*86400000).toISOString(), reminderDays: [3,2,1], enabled: true };
+  const cert = (await request('/api/ssl-certificates', { method: 'POST', token, body: certInput, expected: 201 })).response;
+  assert.equal(cert.name, certInput.name); assert.deepEqual(cert.nodeUuids, [fixtureNode]);
+  assert((await request('/api/ssl-certificates', { token })).response.items.some(item => item.id === cert.id));
+  const updated = (await request('/api/ssl-certificates/'+cert.id, { method: 'PUT', token,
+    body: { ...certInput, reminderDays: [7,3,1], expiresAt: new Date(Date.now()+30*86400000).toISOString() } })).response;
+  assert.deepEqual(updated.reminderDays, [7,3,1]);
+  await request('/api/ssl-certificates', { method: 'POST', token, body: { ...certInput, reminderDays: [0] }, expected: 400 });
+  await request('/api/ssl-certificates/'+cert.id, { method: 'DELETE', token });
+
+  const config = (await request('/api/panel-events/push/config', { token, extraHeaders: { Referer: 'https://panel.example.invalid/settings' } })).response;
+  assert.equal(config.enabled, true); assert.match(config.publicKey, /^[A-Za-z0-9_-]{87}$/);
+  assert(!JSON.stringify(config).includes('privateKey'));
+  const receiver = createECDH('prime256v1'); receiver.generateKeys();
+  const subscription = { endpoint: 'https://fcm.googleapis.com/fcm/send/api-smoke-'+suffix, expirationTime: null,
+    keys: { p256dh: receiver.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') } };
+  assert.equal((await request('/api/panel-events/push/subscriptions', { method: 'POST', token, body: subscription, expected: 201 })).response.subscribed, true);
+  await request('/api/panel-events/push/subscriptions', { method: 'POST', token,
+    body: { ...subscription, endpoint: 'http://127.0.0.1/internal' }, expected: 400 });
+  assert.equal((await request('/api/panel-events/push/subscriptions', { method: 'DELETE', token, body: { endpoint: subscription.endpoint } })).response.subscribed, false);
+  await request('/api/panel-events/preferences', { method: 'PUT', token, body: { ...selection, browserEnabled: false } });
+  await db.$executeRaw`DELETE FROM panel_events WHERE source_key LIKE ${`api-events:${suffix}:%`}`;
+  console.log('PASS authenticated event history/watermark/preferences, SSL CRUD, Web Push enrollment and unsafe destination rejection');
+}
+
 async function apiSmoke() {
   await waitForApi();
   const started = Date.now();
@@ -336,6 +392,7 @@ async function apiSmoke() {
   assert.equal(user.uuid, sentinelUuid);
   assert.equal(user.username, username);
   console.log('PASS real admin registration/login, browser JWT authentication and existing user API');
+  await panelNotificationApiSmoke(token);
 
   const settings = (await request('/api/limiter/settings', { token })).response;
   assert.equal(settings.enabled, false);

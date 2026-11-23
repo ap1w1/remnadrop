@@ -102,6 +102,8 @@ await context.route('**/*', async route => {
   calls.push({ pathname, method, body });
   let result;
   if (pathname === '/api/auth/status') result = { isLoginAllowed: true, isRegisterAllowed: false, authentication: null, branding: { title: 'RemnaDrop', logoUrl: null } };
+  else if (pathname === '/api/panel-events/summary') result = { unreadCount: 0, latestSequence: '0' };
+  else if (pathname === '/api/panel-events/preferences') result = { adminUuid: '00000000-0000-4000-8000-000000000010', browserEnabled: false, pushEnabled: false, eventTypes: [] };
   else if (pathname === '/api/system/stats/recap') result = { thisMonth: { users: 240, traffic: '2199023255552' }, total: { users: 1200, nodes: 12, traffic: '21990232555520', nodesRam: '68719476736', nodesCpuCores: 48, distinctCountries: 6 }, version: '2.8.1', initDate: '2026-01-01T00:00:00.000Z' };
   else if (pathname === '/api/system/metadata') result = { version: '2.8.1', build: { time: now, number: 'ui-qa' }, git: { backend: { commitSha: 'ui-fixture', branch: 'qa', commitUrl: '' }, frontend: { commitSha: 'ui-fixture', commitUrl: '' } } };
   else if (pathname === '/api/cloudflare-dns/accounts') {

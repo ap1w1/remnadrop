@@ -37,6 +37,7 @@ export const MobileLayout = (props: IProps) => {
                             isGithubLoading={isLoadingUpdates}
                             stars={remnawaveInfo.starsCount || undefined}
                             withLanguage={false}
+                            withEvents={false}
                             withLogout={false}
                             withVersion={false}
                             withGithub={false}

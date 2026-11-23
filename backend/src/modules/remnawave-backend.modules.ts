@@ -2,6 +2,8 @@ import { BackupsModule } from './backups/backups.module';
 import { Module } from '@nestjs/common';
 import { SquadQuotasModule } from './squad-quotas/squad-quotas.module';
 import { NodeOperationsModule } from './node-operations/node-operations.module';
+import { PanelEventsModule } from './panel-events/panel-events.module';
+import { PanelPushModule } from './panel-push/panel-push.module';
 import { ConditionalModule } from '@nestjs/config';
 
 import { isRestApi, isScheduler } from '@common/utils/startup-app';
@@ -38,6 +40,8 @@ import { UsersModule } from './users/users.module';
     imports: [
         SquadQuotasModule,
         NodeOperationsModule,
+        PanelEventsModule,
+        PanelPushModule,
         ConditionalModule.registerWhen(BackupsModule, () => isRestApi()),
         RemnawaveSettingsModule,
         ConditionalModule.registerWhen(AdminModule, () => isRestApi()),

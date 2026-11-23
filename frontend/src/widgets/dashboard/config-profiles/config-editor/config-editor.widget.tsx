@@ -1,5 +1,6 @@
 import type { editor } from 'monaco-editor'
 
+import { CertificateExpiryProvider, useCertificateExpiryMonacoHover, useCertificateExpiryRegistry } from '@features/dashboard/config-profiles/certificate-expiry'
 import { ConfigEditorActionsFeature } from '@features/dashboard/config-profiles/config-editor-actions'
 import { ConfigValidationFeature } from '@features/dashboard/config-profiles/config-validation'
 import { MonacoSetupFeature } from '@features/dashboard/config-profiles/monaco-setup'
@@ -7,7 +8,7 @@ import { Alert, Box, Button, Card, Code, Group, Loader, Paper, Stack } from '@ma
 import { modals } from '@mantine/modals'
 import Editor, { Monaco, useMonaco } from '@monaco-editor/react'
 import clsx from 'clsx'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TbAlertTriangle } from 'react-icons/tb'
 import { useBlocker } from 'react-router'
@@ -40,6 +41,9 @@ export function ConfigEditorWidget(props: IProps) {
 
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
     const wasWasmRestarting = useRef(false)
+    const { data: certificates } = useCertificateExpiryRegistry()
+    const certificateNodeUuids = useMemo(() => configProfile.nodes.map(node => node.uuid), [configProfile.nodes])
+    useCertificateExpiryMonacoHover(monaco, editorRef, certificates, certificateNodeUuids, i18n.language)
 
     const { isFullscreen, toggle: toggleFullscreen } = usePseudoFullscreen()
 
@@ -152,7 +156,9 @@ export function ConfigEditorWidget(props: IProps) {
             </Group>
             {visualError && <Alert color="red" onClose={() => setVisualError('')} withCloseButton>{visualError}</Alert>}
             {visualMode && visualValue && <Paper className={clsx(styles.editorWrapper, isFullscreen && fullscreenClasses.fill)} withBorder style={{overflow:'auto'}}>
-                <VisualConfigEditor config={visualValue} onChange={visualChange}/>
+                <CertificateExpiryProvider certificates={certificates} nodeUuids={certificateNodeUuids} locale={i18n.language}>
+                    <VisualConfigEditor config={visualValue} onChange={visualChange}/>
+                </CertificateExpiryProvider>
             </Paper>}
             <Paper
                 className={clsx(styles.editorWrapper, isFullscreen && fullscreenClasses.fill)}

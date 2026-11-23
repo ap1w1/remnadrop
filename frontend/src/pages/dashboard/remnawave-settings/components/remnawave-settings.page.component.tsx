@@ -4,6 +4,7 @@ import { ApiTokensCardWidget } from '@widgets/remnawave-settings/api-tokens-card
 import { AuthentificationSettingsCardWidget } from '@widgets/remnawave-settings/authentification-settings-card/authentification-settings-card.widget'
 import { BrandingSettingsCardWidget } from '@widgets/remnawave-settings/branding-settings-card/branding-settings-card.widget'
 import { VisualSettingsCardWidget } from '@widgets/remnawave-settings/visual-settings-card/visual-settings-card.widget'
+import { NotificationsCardWidget } from '@widgets/remnawave-settings/notifications-card/notifications-card.widget'
 import { useTranslation } from 'react-i18next'
 import Masonry from 'react-layout-masonry'
 
@@ -37,6 +38,7 @@ export const RemnawaveSettingsPageComponent = (props: IProps) => {
             <PageHeaderShared icon={<Logo size={24} />} title={t('constants.remnawave-settings')} />
             <Container fluid p={0} size="xl">
                 <Masonry columns={{ 300: 1, 1400: 2, 2000: 3, 3000: 4 }} gap={16}>
+                    <NotificationsCardWidget />
                     <AuthentificationSettingsCardWidget
                         oauth2Settings={remnawaveSettings.oauth2Settings}
                         passkeySettings={remnawaveSettings.passkeySettings}

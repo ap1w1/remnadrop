@@ -1,4 +1,5 @@
 import { Accordion, Alert, Button, Group, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Text, TextInput } from '@mantine/core'
+import { CertificateDomainInput } from '@features/dashboard/config-profiles/certificate-expiry'
 import { useMemo } from 'react'
 
 type Value=Record<string,unknown>
@@ -48,14 +49,14 @@ export function VisualOutboundFields({outbound,onChange}:{outbound:Value;onChang
       placeholder="Не указывать — выбрать автоматически" onChange={event=>onChange({...outbound,sendThrough:event.currentTarget.value})}/>
     </>}
     {(protocol==='socks'||protocol==='http')&&<SimpleGrid cols={{base:1,sm:2}}>
-     <TextInput label="Адрес прокси" value={asText(settings.address)} onChange={event=>setSettings({address:event.currentTarget.value})}/>
+     <CertificateDomainInput label="Адрес прокси" value={asText(settings.address)} onChange={event=>setSettings({address:event.currentTarget.value})}/>
      <NumberInput label="Порт прокси" min={1} max={65535} allowDecimal={false}
       value={typeof settings.port==='number'?settings.port:1080}
       onChange={value=>{if(typeof value==='number')setSettings({port:value})}}/>
     </SimpleGrid>}
     {protocol==='vless'&&<>
      <SimpleGrid cols={{base:1,sm:2}}>
-      <TextInput label="VLESS сервер / IP" value={asText(remote.address)}
+      <CertificateDomainInput label="VLESS сервер / IP" value={asText(remote.address)}
        onChange={event=>setRemote({address:event.currentTarget.value})}/>
       <NumberInput label="Порт удалённого сервера" min={1} max={65535} allowDecimal={false}
        value={typeof remote.port==='number'?remote.port:443}
@@ -79,7 +80,7 @@ export function VisualOutboundFields({outbound,onChange}:{outbound:Value;onChang
       value={asText(obj(stream.xhttpSettings).path)}
       onChange={event=>setStream({xhttpSettings:{...obj(stream.xhttpSettings),path:event.currentTarget.value}})}/>}
      {stream.security==='reality'&&<Stack gap="sm">
-      <TextInput label="REALITY SNI" value={asText(reality.serverName)} onChange={event=>setReality({serverName:event.currentTarget.value})}/>
+      <CertificateDomainInput label="REALITY SNI" value={asText(reality.serverName)} onChange={event=>setReality({serverName:event.currentTarget.value})}/>
       <PasswordInput label="REALITY Public Key / Password" value={asText(reality[publicKeyName])}
        autoComplete="off" onChange={event=>setReality({[publicKeyName]:event.currentTarget.value})}/>
       <SimpleGrid cols={{base:1,sm:2}}>
@@ -89,7 +90,7 @@ export function VisualOutboundFields({outbound,onChange}:{outbound:Value;onChang
         onChange={value=>setReality({fingerprint:value??'chrome'})}/>
       </SimpleGrid>
      </Stack>}
-     {stream.security==='tls'&&<TextInput label="TLS ServerName" value={asText(tls.serverName)}
+     {stream.security==='tls'&&<CertificateDomainInput label="TLS ServerName" value={asText(tls.serverName)}
       onChange={event=>setStream({tlsSettings:{...tls,serverName:event.currentTarget.value}})}/>}
     </>}
     {protocol==='blackhole'&&<Text size="sm" c="dimmed">Исходящее направление BLOCK: соединение отклоняется, дополнительные параметры не требуются.</Text>}

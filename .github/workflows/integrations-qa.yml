@@ -39,6 +39,7 @@ jobs:
         run: |
           sudo python3 -m unittest discover -s tests -v
           node --test tests/limiter-runtime.cjs
+          node --test tests/integrations/certificate-expiry.test.mjs
       - name: Build application image
         id: image
         run: |
@@ -51,11 +52,14 @@ jobs:
             test -s /app/prisma/migrations/20261122220000_limiter_events/migration.sql
             test -s /app/prisma/migrations/20261122221000_cloudflare_accounts/migration.sql
             test -s /app/prisma/migrations/20261122222000_automation_workflows/migration.sql
+            test -s /app/prisma/migrations/20261123230000_panel_events_ssl/migration.sql
+            test -s /app/prisma/migrations/20261123231000_panel_push/migration.sql
             test -f /app/frontend/index.html
             test -s /app/frontend/assets/wasm_exec.js
             test -s /app/frontend/assets/main.wasm
             test -s /app/frontend/assets/xray.schema.json
             test -s /app/frontend/assets/xray.schema.cn.json
+            test -s /app/frontend/remnadrop-notifications-sw.js
             test -x /usr/local/bin/remnawave-limiter
             test -s /etc/ssl/certs/ca-certificates.crt
             grep -RqlF "/dashboard/tools/limiter" /app/frontend
@@ -83,8 +87,13 @@ jobs:
           container=$(docker create remnadrop-integrations-qa)
           trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
           docker cp "$container:/app/frontend/." artifacts/frontend/
-          REMNADROP_PLAYWRIGHT_MODULE="$RUNNER_TEMP/remnadrop-ui-qa/node_modules/playwright/index.mjs" \
-            node tests/integrations/ui-smoke.mjs
+          export REMNADROP_PLAYWRIGHT_MODULE="$RUNNER_TEMP/remnadrop-ui-qa/node_modules/playwright/index.mjs"
+          ui_status=0
+          node tests/integrations/ui-smoke.mjs || ui_status=1
+          REMNADROP_UI_OUTPUT=artifacts/ui/user-editor node tests/integrations/user-editor-ui-smoke.mjs || ui_status=1
+          REMNADROP_UI_OUTPUT=artifacts/ui/config-certificates node tests/integrations/config-certificate-ui-smoke.mjs || ui_status=1
+          REMNADROP_UI_OUTPUT=artifacts/ui/panel-events node tests/integrations/panel-events-ui-smoke.mjs || ui_status=1
+          exit "$ui_status"
       - name: Upload UI screenshots and verification report
         if: always()
         uses: actions/upload-artifact@v4

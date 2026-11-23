@@ -6,6 +6,7 @@ import { clearQueryClient } from '@shared/api'
 import { ROUTES } from '@shared/constants'
 import { resetAllStores } from '@shared/hocs/store-wrapper'
 import { useAuth } from '@shared/hooks'
+import { stopPanelNotifications } from '@shared/lib/panel-notifications'
 import { LanguagePicker } from '@shared/ui/language-picker/language-picker.shared'
 
 import { removeToken } from '@entities/auth'
@@ -14,7 +15,8 @@ export const HeaderButtons = () => {
     const { setIsAuthenticated } = useAuth()
     const navigate = useNavigate()
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        await stopPanelNotifications()
         setIsAuthenticated(false)
         removeToken()
         resetAllStores()

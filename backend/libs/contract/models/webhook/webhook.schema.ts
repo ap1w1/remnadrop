@@ -181,6 +181,26 @@ export const RemnawaveWebhookTorrentBlockerEvents = z.object({
         }),
     }),
 });
+export const RemnawaveWebhookSslEvents = z.object({
+    id: z.string().uuid(),
+    scope: z.literal(EVENTS_SCOPES.SSL),
+    event: z.enum(toZodEnum(EVENTS.SSL)),
+    timestamp: z.string().datetime().transform((str) => new Date(str)),
+    data: z.object({
+        certificateId: z.string().uuid(),
+        name: z.string(),
+        domains: z.array(z.string()),
+        nodeUuids: z.array(z.string().uuid()),
+        nodes: z.array(z.object({ uuid: z.string().uuid(), name: z.string() })),
+        expiresAt: z.string().datetime().transform((str) => new Date(str)),
+        reminderDaysBefore: z.number().int().min(0).max(365),
+        expiryRevision: z.number().int().positive(),
+        severity: z.enum(['warning', 'critical']),
+        title: z.string(),
+        message: z.string(),
+    }),
+});
+
 export const RemnawaveWebhookEventSchema = z.discriminatedUnion('scope', [
     RemnawaveWebhookUserEvents,
     RemnawaveWebhookUserHwidDevicesEvents,
@@ -189,6 +209,7 @@ export const RemnawaveWebhookEventSchema = z.discriminatedUnion('scope', [
     RemnawaveWebhookErrorsEvents,
     RemnawaveWebhookCrmEvents,
     RemnawaveWebhookTorrentBlockerEvents,
+    RemnawaveWebhookSslEvents,
 ]);
 
 export type TRemnawaveWebhookEvent = z.infer<typeof RemnawaveWebhookEventSchema>;
@@ -198,6 +219,7 @@ export type TRemnawaveWebhookNodeEvent = z.infer<typeof RemnawaveWebhookNodeEven
 export type TRemnawaveWebhookServiceEvent = z.infer<typeof RemnawaveWebhookServiceEvents>;
 export type TRemnawaveWebhookErrorsEvent = z.infer<typeof RemnawaveWebhookErrorsEvents>;
 export type TRemnawaveWebhookCrmEvent = z.infer<typeof RemnawaveWebhookCrmEvents>;
+export type TRemnawaveWebhookSslEvent = z.infer<typeof RemnawaveWebhookSslEvents>;
 export type TRemnawaveWebhookUserHwidDevicesEvent = z.infer<
     typeof RemnawaveWebhookUserHwidDevicesEvents
 >;

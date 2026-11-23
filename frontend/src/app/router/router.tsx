@@ -1,4 +1,6 @@
 import { LimiterPage, LimiterSettingsPage } from '@pages/dashboard/node-operations/limiter.page'
+import { PanelEventsPage } from '@pages/dashboard/panel-events/panel-events.page'
+import { SslCertificatesPage } from '@pages/dashboard/ssl-certificates/ssl-certificates.page'
 import { CloudflareDnsPage, CloudflareDnsSettingsPage } from '@pages/dashboard/node-operations/cloudflare-dns.page'
 import { BackupsPage } from '@pages/dashboard/backups/backups.page'
 import { NodeTopologyPage } from '@pages/dashboard/node-topology/node-topology.page'
@@ -69,8 +71,10 @@ const router = createBrowserRouter(
                     <Route path="/dashboard/documentation" element={<DocumentationPage />} />
                     <Route element={<Navigate replace to={ROUTES.DASHBOARD.HOME} />} index />
                     <Route element={<HomePageConnector />} path={ROUTES.DASHBOARD.HOME} />
+                    <Route element={<PanelEventsPage />} path={ROUTES.DASHBOARD.EVENTS} />
 
                     <Route path={ROUTES.DASHBOARD.MANAGEMENT.ROOT}>
+                        <Route element={<SslCertificatesPage />} path={ROUTES.DASHBOARD.MANAGEMENT.SSL_CERTIFICATES} />
                         <Route path="/dashboard/management/monitoring" element={<MonitoringPage />} />
                         <Route path="/dashboard/management/monitoring/settings" element={<MonitoringSettingsPage />} />
                         <Route path="/dashboard/management/dpi-checker" element={<DpiCheckerPage />} />

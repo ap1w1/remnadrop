@@ -1,6 +1,7 @@
 import { BoxProps, Group } from '@mantine/core'
 
 import { LanguageControl } from './LanguageControl'
+import { EventsControl } from './EventsControl'
 import { LogoutControl } from './LogoutControl'
 import { RecapControl } from './RecapControl'
 import { SupportControl } from './SupportControl'
@@ -13,6 +14,7 @@ interface HeaderControlsProps extends BoxProps {
     stars?: number
     telegramLink: string
     withGithub?: boolean
+    withEvents?: boolean
     withLanguage?: boolean
     withLogout?: boolean
     withPrime?: boolean
@@ -25,6 +27,7 @@ interface HeaderControlsProps extends BoxProps {
 export function HeaderControls({
     githubLink,
     withGithub = true,
+    withEvents = true,
     withTelegram = true,
     withSupport = true,
     withLogout = true,
@@ -39,6 +42,7 @@ export function HeaderControls({
 }: HeaderControlsProps) {
     return (
         <Group gap="xs" {...others}>
+            {withEvents && <EventsControl />}
             {withTelegram && <TelegramControl link={telegramLink} />}
             {withSupport && <SupportControl />}
 

@@ -2,7 +2,9 @@ import consola from 'consola/browser'
 import { createContext, ReactNode, useEffect, useMemo, useState } from 'react'
 
 import { logoutEvents } from '@shared/emitters'
+import { clearQueryClient, queryClient } from '@shared/api/query-client'
 import { resetAllStores } from '@shared/hocs/store-wrapper'
+import { stopPanelNotifications } from '@shared/lib/panel-notifications'
 
 import { removeToken, useToken } from '@entities/auth'
 
@@ -31,10 +33,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         try {
+            void stopPanelNotifications(false)
             setIsLoggedOut(true)
             setIsAuthenticated(false)
             removeToken()
             resetAllStores()
+            void queryClient.cancelQueries()
+            clearQueryClient()
         } finally {
             setIsLoggedOut(false)
         }
@@ -51,6 +56,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     useEffect(() => {
         ;(async () => {
             if (!token) {
+                void stopPanelNotifications(false)
+                void queryClient.cancelQueries()
+                clearQueryClient()
                 setIsAuthenticated(false)
                 setIsInitialized(true)
                 return

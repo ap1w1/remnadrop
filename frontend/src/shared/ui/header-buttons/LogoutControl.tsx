@@ -6,6 +6,7 @@ import { clearQueryClient } from '@shared/api'
 import { ROUTES } from '@shared/constants'
 import { resetAllStores } from '@shared/hocs/store-wrapper'
 import { useAuth } from '@shared/hooks'
+import { stopPanelNotifications } from '@shared/lib/panel-notifications'
 
 import { removeToken } from '@entities/auth'
 
@@ -16,7 +17,8 @@ export function LogoutControl() {
     const { setIsAuthenticated } = useAuth()
     const navigate = useNavigate()
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        await stopPanelNotifications()
         setIsAuthenticated(false)
         removeToken()
         resetAllStores()
@@ -25,7 +27,7 @@ export function LogoutControl() {
     }
 
     return (
-        <HeaderControl className={classes.logout} onClick={handleLogout}>
+        <HeaderControl aria-label="Выйти из аккаунта" className={classes.logout} onClick={handleLogout}>
             <PiSignOut style={{ width: rem(22), height: rem(22) }} />
         </HeaderControl>
     )

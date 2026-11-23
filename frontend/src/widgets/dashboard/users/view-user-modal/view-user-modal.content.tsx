@@ -3,7 +3,7 @@ import { SquadQuotas } from './squad-quotas'
 import { ResetUsageUserFeature } from '@features/ui/dashboard/users/reset-usage-user'
 import { RevokeSubscriptionUserFeature } from '@features/ui/dashboard/users/revoke-subscription-user'
 import { ToggleUserStatusButtonFeature } from '@features/ui/dashboard/users/toggle-user-status-button'
-import { Button, Group, Menu, px, Stack } from '@mantine/core'
+import { Button, Menu, px, SimpleGrid, Stack } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { UpdateUserCommand } from '@remnawave/backend-contract'
 import dayjs from 'dayjs'
@@ -253,39 +253,45 @@ export const ViewUserModalContent = (props: IProps) => {
                     animate="visible"
                     gap="md"
                     initial="hidden"
-                    style={{ width: '100%', maxWidth: 960, margin: '0 auto', minWidth: 0 }}
+                    style={{ width: '100%', minWidth: 0 }}
                     variants={containerVariants}
                 >
-                    <UserIdentificationCard
-                        cardVariants={cardVariants}
-                        lastConnectedNode={lastConnectedNode}
-                        motionWrapper={MotionWrapper}
-                        user={user}
-                    />
-                    <TrafficLimitsCard
-                        cardVariants={cardVariants}
-                        form={form}
-                        motionWrapper={MotionWrapper}
-                    />
+                    <SimpleGrid cols={2} spacing="md" style={{ alignItems: 'start' }}>
+                        <Stack gap="md" miw={0}>
+                            <UserIdentificationCard
+                                cardVariants={cardVariants}
+                                lastConnectedNode={lastConnectedNode}
+                                motionWrapper={MotionWrapper}
+                                user={user}
+                            />
+                            <ContactInformationCard
+                                cardVariants={cardVariants}
+                                form={form}
+                                motionWrapper={MotionWrapper}
+                            />
+                            <DeviceTagSettingsCard
+                                cardVariants={cardVariants}
+                                form={form}
+                                motionWrapper={MotionWrapper}
+                                tags={tags}
+                            />
+                        </Stack>
+                        <Stack gap="md" miw={0}>
+                            <TrafficLimitsCard
+                                cardVariants={cardVariants}
+                                form={form}
+                                motionWrapper={MotionWrapper}
+                            />
+                            <AccessSettingsCard
+                                cardVariants={cardVariants}
+                                externalSquads={externalSquads}
+                                form={form}
+                                internalSquads={internalSquads}
+                                motionWrapper={MotionWrapper}
+                            />
+                        </Stack>
+                    </SimpleGrid>
                     <SquadQuotas userUuid={userUuid} />
-                    <AccessSettingsCard
-                        cardVariants={cardVariants}
-                        externalSquads={externalSquads}
-                        form={form}
-                        internalSquads={internalSquads}
-                        motionWrapper={MotionWrapper}
-                    />
-                    <ContactInformationCard
-                        cardVariants={cardVariants}
-                        form={form}
-                        motionWrapper={MotionWrapper}
-                    />
-                    <DeviceTagSettingsCard
-                        cardVariants={cardVariants}
-                        form={form}
-                        motionWrapper={MotionWrapper}
-                        tags={tags}
-                    />
                 </MotionStack>
             )}
 

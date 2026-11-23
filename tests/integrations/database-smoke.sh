@@ -128,6 +128,8 @@ printf '\nRepeating deployment to verify migration idempotence...\n'
 run_image "$REPEAT" '
   npm run migrate:deploy
   node /checks/application-smoke.cjs verify-upgrade
+  node /checks/panel-events-smoke.cjs
+  node /checks/panel-push-smoke.cjs
 '
 
 printf '\nStarting the real API and checking authenticated endpoints...\n'

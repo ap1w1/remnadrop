@@ -1,4 +1,5 @@
 import { Accordion, Alert, Checkbox, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Text, TextInput, Textarea } from '@mantine/core'
+import { CertificateDomainInput } from '@features/dashboard/config-profiles/certificate-expiry'
 
 type Value=Record<string,unknown>
 const obj=(v:unknown):Value=>v!==null && typeof v==='object' && !Array.isArray(v)?v as Value:{}
@@ -47,7 +48,7 @@ export function VisualInboundFields({inbound,onChange}:{inbound:Value;onChange:(
    <SimpleGrid cols={{base:1,sm:2}}>
     <TextInput label="WebSocket path" value={value(ws.path)||'/'}
      onChange={e=>setNested('wsSettings',{path:e.currentTarget.value})}/>
-    <TextInput label="WebSocket Host" value={value(obj(ws.headers).Host)}
+    <CertificateDomainInput label="WebSocket Host" value={value(obj(ws.headers).Host)}
      onChange={e=>setNested('wsSettings',{headers:{...obj(ws.headers),Host:e.currentTarget.value}})}/>
    </SimpleGrid>
    <Switch label="Принимать PROXY Protocol внутри WebSocket" checked={ws.acceptProxyProtocol===true}
@@ -69,12 +70,12 @@ export function VisualInboundFields({inbound,onChange}:{inbound:Value;onChange:(
   {security==='reality'&&<Accordion variant="contained" radius="md" defaultValue="reality"><Accordion.Item value="reality">
    <Accordion.Control>REALITY · параметры</Accordion.Control><Accordion.Panel><Stack gap="sm">
     <SimpleGrid cols={{base:1,sm:2}}>
-     <TextInput label="Target / Dest" placeholder="example.com:443" value={value(reality[realityTargetKey])}
+     <CertificateDomainInput label="Target / Dest" placeholder="example.com:443" value={value(reality[realityTargetKey])}
       onChange={e=>setNested('realitySettings',{[realityTargetKey]:e.currentTarget.value})}/>
      <NumberInput label="Xver" min={0} max={2} allowDecimal={false} value={typeof reality.xver==='number'?reality.xver:0}
       onChange={v=>{if(typeof v==='number')setNested('realitySettings',{xver:v})}}/>
     </SimpleGrid>
-    <TextInput label="Server Names" description="Через запятую" value={list(reality.serverNames)}
+    <CertificateDomainInput label="Server Names" description="Через запятую" value={list(reality.serverNames)}
      onChange={e=>setNested('realitySettings',{serverNames:split(e.currentTarget.value)})}/>
     <TextInput label="Short IDs" description="Через запятую" value={list(reality.shortIds)}
      onChange={e=>setNested('realitySettings',{shortIds:split(e.currentTarget.value)})}/>
@@ -86,17 +87,17 @@ export function VisualInboundFields({inbound,onChange}:{inbound:Value;onChange:(
   {security==='tls'&&<Accordion variant="contained" radius="md" defaultValue="tls"><Accordion.Item value="tls">
    <Accordion.Control>TLS · сертификаты, SNI и ALPN</Accordion.Control><Accordion.Panel><Stack gap="sm">
     <SimpleGrid cols={{base:1,sm:2}}>
-     <TextInput label="SNI / ServerName" value={value(tls.serverName)}
+     <CertificateDomainInput label="SNI / ServerName" value={value(tls.serverName)}
       onChange={e=>setNested('tlsSettings',{serverName:e.currentTarget.value})}/>
      <Select label="Минимальная версия TLS" clearable data={['1.2','1.3'].map(v=>({value:v,label:'TLS '+v}))}
       value={value(tls.minVersion)||null} onChange={v=>setNested('tlsSettings',{minVersion:v??''})}/>
     </SimpleGrid>
     <TextInput label="ALPN" description="Например: h3, h2, http/1.1" value={list(tls.alpn)}
      onChange={e=>setNested('tlsSettings',{alpn:split(e.currentTarget.value)})}/>
-    <TextInput label="Путь к приватному ключу TLS" value={value(cert.keyFile)}
+    <CertificateDomainInput label="Путь к приватному ключу TLS" value={value(cert.keyFile)}
      placeholder="/etc/letsencrypt/live/example.com/privkey.pem"
      onChange={e=>modifyCertificate({keyFile:e.currentTarget.value})}/>
-    <TextInput label="Путь к сертификату TLS" value={value(cert.certificateFile)}
+    <CertificateDomainInput label="Путь к сертификату TLS" value={value(cert.certificateFile)}
      placeholder="/etc/letsencrypt/live/example.com/fullchain.pem"
      onChange={e=>modifyCertificate({certificateFile:e.currentTarget.value})}/>
     {certs.length>1&&<Text size="xs" c="dimmed">Дополнительные сертификаты сохранены ({certs.length-1}); для редактирования используйте JSON.</Text>}

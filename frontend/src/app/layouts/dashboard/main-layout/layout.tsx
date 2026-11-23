@@ -2,6 +2,7 @@ import { useMediaQuery } from '@mantine/hooks'
 
 import { useIsMobile } from '@shared/hooks'
 import { HeaderControls } from '@shared/ui/header-buttons'
+import { PanelNotifications } from '@shared/ui/panel-notifications/panel-notifications'
 
 import { useIsLoadingRemnawaveUpdates, useRemnawaveInfo } from '@entities/dashboard/updates-store'
 import { LAYOUT_STYLE, useLayoutStyle } from '@entities/dashboard/view-preferences-store'
@@ -24,7 +25,7 @@ export function MainLayout() {
     const isLoadingUpdates = useIsLoadingRemnawaveUpdates()
 
     const headerControls = (
-        <HeaderControls
+        <><PanelNotifications /><HeaderControls
             {...DASHBOARD_LINKS}
             telegramLink="https://t.me/remnadrop"
             isGithubLoading={isLoadingUpdates}
@@ -33,7 +34,7 @@ export function MainLayout() {
             withRecap={!isMobile}
             withSupport
             withTelegram={!isMobile}
-        />
+        /></>
     )
 
     if (isMobile) {

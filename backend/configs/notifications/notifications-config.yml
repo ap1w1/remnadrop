@@ -270,3 +270,13 @@ events:
   torrent_blocker.report:
     telegram: true
     webhook: true
+
+  # SSL reminders are also recorded in Events, independently of these channels.
+  # The SSL registry currently delivers webhooks/browser/push; no Telegram sender.
+  ssl.expiring:
+    telegram: false
+    webhook: true
+
+  ssl.expired:
+    telegram: false
+    webhook: true
