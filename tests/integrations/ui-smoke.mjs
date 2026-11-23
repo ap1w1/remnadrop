@@ -322,7 +322,7 @@ try {
     }
     if (name === 'limiter-settings') await visible(page.getByRole('combobox', { name: 'Режим', exact: true }));
     if (name === 'cloudflare-settings') await visible(page.getByText('Основные домены', { exact: true }));
-    if (name === 'automations') await visible(page.getByText('Резервный IP домена', { exact: true }));
+    if (name === 'automations') await visible(page.getByRole('tabpanel', { name: 'Правила' }).getByText('Резервный IP домена', { exact: true }));
     await noHorizontalOverflow(); await capture(name + '-mobile', name === 'limiter' ? checkExpandedLimiterEvent : undefined);
     });
   }

@@ -8,5 +8,12 @@ export const FINGERPRINTS = [
     'ios',
     'qq',
     '360',
+    'hellochrome_auto',
+    'hellofirefox_auto',
+    'helloios_auto',
+    'helloedge_auto',
+    'hellosafari_auto',
+    'hello360_auto',
+    'helloqq_auto',
     'random',
 ] as const;
