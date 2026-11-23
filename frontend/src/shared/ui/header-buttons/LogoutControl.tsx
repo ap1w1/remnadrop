@@ -8,6 +8,7 @@ import { resetAllStores } from '@shared/hocs/store-wrapper'
 import { useAuth } from '@shared/hooks'
 
 import { removeToken } from '@entities/auth'
+import { unsubscribePush } from '@shared/notifications/browser-notifications'
 
 import { HeaderControl } from './HeaderControl'
 import classes from './LogoutControl.module.css'
@@ -16,7 +17,13 @@ export function LogoutControl() {
     const { setIsAuthenticated } = useAuth()
     const navigate = useNavigate()
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        // Stop delivery to a shared browser before clearing its session.
+        try {
+            await unsubscribePush()
+        } catch {
+            // Continue logout when the notification service is unavailable.
+        }
         setIsAuthenticated(false)
         removeToken()
         resetAllStores()

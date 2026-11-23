@@ -26,6 +26,15 @@ await new Promise(accept => server.listen(0, '127.0.0.1', accept));
 const origin = 'http://127.0.0.1:' + server.address().port;
 const browser = await chromium.launch({ headless: true, ...(process.env.REMNADROP_CHROMIUM ? { executablePath: process.env.REMNADROP_CHROMIUM } : {}) });
 const now = new Date().toISOString();
+const panelFixtures = JSON.parse(await readFile(new URL('./fixtures/panel-ui.json', import.meta.url), 'utf8'));
+let panelPreferences = { adminUuid: '10000000-0000-4000-8000-000000000001', browserEnabled: false,
+  eventTypes: ['node.offline','node.online','automation.triggered','automation.failed','billing.reminder','ssl.expiring','ssl.expired','metric.cpu','metric.memory','metric.online_drop','metric.traffic_drop'] };
+let panelUnread = 2;
+const panelEvents = [
+  { id:'2',type:'ssl.expiring',severity:'warning',title:'Истекает SSL-сертификат',message:'Edge TLS · vpn.example.com · Финляндия-2',createdAt:now,data:{} },
+  { id:'1',type:'node.offline',severity:'error',title:'Нода недоступна',message:'Финляндия-2',createdAt:now,data:{} },
+];
+let certificates = [];
 const accountA = '10000000-0000-4000-8000-000000000001';
 const accountB = '10000000-0000-4000-8000-000000000002';
 const nodeId = '10000000-0000-4000-8000-000000000003';
@@ -79,11 +88,15 @@ const rules = [{
 const executions = [];
 const calls = [], unexpected = [], pageErrors = [];
 const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, locale: 'ru-RU', colorScheme: 'dark' });
+await context.grantPermissions(['notifications'], { origin });
 await context.addInitScript(() => {
   localStorage.setItem('sessionStore', JSON.stringify({ state: { token: 'synthetic-ui-token' }, version: 0 }));
   localStorage.setItem('updatesStore', JSON.stringify({ state: { lastUpdateTimestamp: Date.now(), remnawaveInfo: { latestVersion: '2.8.1', starsCount: 1 } }, version: 1 }));
   localStorage.setItem('i18nextLng', 'ru');
   localStorage.setItem('mantine-color-scheme-value', 'dark');
+  window.permissionRequests = 0;
+  const permission = Notification.requestPermission.bind(Notification);
+  Notification.requestPermission = (...args) => { window.permissionRequests++; return permission(...args); };
 });
 function preview(input) {
   return { valid: true, readOnly: true, failurePolicy: input.failure_policy || 'stop',
@@ -94,11 +107,13 @@ function preview(input) {
 await context.route('**/*', async route => {
   const request = route.request(), url = new URL(request.url());
   if (url.origin !== origin) {
+    // Windows needs a flag-font fallback; Linux CI renders flags without this optional request.
+    if (process.platform === 'win32' && url.href === 'https://cdn.jsdelivr.net/npm/country-flag-emoji-polyfill@0.1/dist/TwemojiCountryFlags.woff2') return route.abort();
     unexpected.push('External request: ' + url.origin + url.pathname);
     return route.abort();
   }
   if (!url.pathname.startsWith('/api/')) return route.continue();
-  const pathname = url.pathname, method = request.method(), body = request.postDataJSON();
+  const pathname = url.pathname.replace(/\/+$/, ''), method = request.method(), body = request.postDataJSON();
   calls.push({ pathname, method, body });
   let result;
   if (pathname === '/api/auth/status') result = { isLoginAllowed: true, isRegisterAllowed: false, authentication: null, branding: { title: 'RemnaDrop', logoUrl: null } };
@@ -137,7 +152,33 @@ await context.route('**/*', async route => {
   } else if (pathname === '/api/node-automations') {
     if (method === 'POST') rules.push({ ...rules[0], ...body, id: '10000000-0000-4000-8000-000000000011' });
     result = rules;
-  } else if (pathname === '/api/nodes') result = [{ uuid: nodeId, name: 'Финляндия-2' }];
+  } else if (pathname === '/api/panel-events') result = { items: panelEvents.filter(event => !url.searchParams.get('type') || event.type===url.searchParams.get('type')), unread: panelUnread, latestId: '2' };
+  else if (pathname === '/api/panel-events/read') { panelUnread=0; result={success:true}; }
+  else if (pathname === '/api/panel-events/preferences') { if(method==='PUT') panelPreferences={...panelPreferences,...body}; result=panelPreferences; }
+  else if (pathname === '/api/panel-events/push/config') result={enabled:false,publicKey:null};
+  else if (pathname === '/api/ssl-certificates') {
+    if(method==='POST') { certificates.push({...body,id:'cert-1',nodeNames:['Финляндия-2']}); result={id:'cert-1'}; }
+    else result=certificates;
+  } else if (pathname === '/api/ssl-certificates/cert-1') {
+    if(method==='PUT') certificates[0]={...certificates[0],...body};
+    if(method==='DELETE') certificates=[];
+    result={success:true};
+  } else if (pathname === '/api/nodes') result = [panelFixtures.node];
+  else if (pathname === '/api/users') result={users:[panelFixtures.user],total:1};
+  else if (pathname === '/api/users/tags') result=panelFixtures.tags;
+  else if (pathname === `/api/users/${panelFixtures.user.uuid}`) result=panelFixtures.user;
+  else if (pathname.endsWith('/node-quotas/settings')) result={mode:'shared',periodDays:30,resetAt:'2026-12-23T00:00:00Z',thresholdPercent:80};
+  else if (pathname.endsWith('/node-quotas/status')) result={pendingSync:false};
+  else if (pathname.endsWith('/node-quotas')) result=[];
+  else if (pathname === '/api/external-squads') result=panelFixtures.externalSquads;
+  else if (pathname === '/api/system/stats') result=panelFixtures.stats;
+  else if (pathname === '/api/remnawave-settings') result=panelFixtures.settings;
+  else if (pathname === '/api/tokens') result={tokens:[],docs:{enabled:false,scalarPath:null,swaggerPath:null}};
+  else if (pathname === '/api/tokens/scopes') result={wildcard:'*',resources:[]};
+  else if (pathname === '/api/config-profiles') result={total:0,configProfiles:[]};
+  else if (pathname === '/api/passkeys') result={passkeys:[]};
+  else if (pathname.startsWith('/api/subscriptions/connection-keys/')) result={enabledKeys:[],hiddenKeys:[],disabledKeys:[]};
+  else if (pathname.startsWith('/api/metadata/user/')) result={metadata:{}};
   else if (pathname === '/api/hosts') result = [{ uuid: hostId, remark: 'Финляндия', address: 'vpn.example.com' }];
   else if (pathname === '/api/internal-squads') result = { total: 0, internalSquads: [] };
   else {
@@ -183,6 +224,7 @@ async function noHorizontalOverflow() {
 }
 const scenarios = [], failures = [];
 async function scenario(name, run) {
+  if (process.env.REMNADROP_UI_ONLY && !new RegExp(process.env.REMNADROP_UI_ONLY).test(name)) return;
   try {
     await run();
     scenarios.push({ name, status: 'passed' });
@@ -301,6 +343,75 @@ try {
   await page.keyboard.press('Escape');
   });
 
+  await scenario('panel-events', async () => {
+    await page.goto(origin + '/dashboard/management/ssl-certificates');
+    await visible(page.getByRole('button',{name:'События, непрочитанных: 2'}));
+    await page.getByRole('button',{name:'События, непрочитанных: 2'}).click();
+    await visible(page.getByRole('heading',{name:'События',exact:true}));
+    await visible(page.getByText('Истекает SSL-сертификат',{exact:true}));
+    await visible(page.getByRole('button',{name:'События, непрочитанных: 0'}));
+    assert(calls.some(call=>call.pathname==='/api/panel-events/read' && call.body.through==='2'));
+    await capture('events-desktop'); await noHorizontalOverflow();
+    await page.getByRole('combobox',{name:'Тип события',exact:true}).click();
+    await page.getByRole('option',{name:'Загрузка ЦП',exact:true}).click();
+    await visible(page.getByText('Нет событий по выбранным фильтрам'));
+  });
+  await scenario('ssl-certificates', async () => {
+    await page.goto(origin + '/dashboard/management/ssl-certificates');
+    await page.getByRole('button',{name:'Добавить сертификат',exact:true}).click();
+    await page.getByLabel('Название сертификата').fill('Edge TLS');
+    await page.getByRole('textbox',{name:/^Домен/}).fill('vpn.example.com');
+    await page.getByRole('combobox',{name:/Ноды с этим сертификатом/}).click();
+    await page.getByRole('option',{name:'Финляндия-2',exact:true}).click();
+    await page.getByRole('heading',{name:'Добавить SSL-сертификат'}).click();
+    await page.getByLabel('Дата окончания действия').fill('2026-12-15');
+    await capture('ssl-certificate-editor');
+    await page.getByRole('button',{name:'Сохранить',exact:true}).click();
+    await visible(page.getByRole('cell',{name:'Edge TLS vpn.example.com'}));
+    assert.deepEqual(certificates[0].reminderDays,[3,2,1]);
+    assert.deepEqual(certificates[0].nodeUuids,[panelFixtures.node.uuid]);
+    await capture('ssl-certificates-desktop'); await noHorizontalOverflow();
+    await page.getByRole('button',{name:'Редактировать Edge TLS'}).click();
+    await page.getByLabel('Дата окончания действия').fill('2027-03-15');
+    await page.getByRole('button',{name:'Сохранить',exact:true}).click();
+    await visible(page.getByRole('cell',{name:'15.03.2027'}));
+  });
+  await scenario('notification-preferences', async () => {
+    await page.goto(origin + '/dashboard/management/settings');
+    await visible(page.getByText('Все события сохраняются в журнале.',{exact:false}));
+    await page.getByRole('switch',{name:'Уведомления при открытой панели'}).click();
+    await visible(page.getByText('Уведомления включены',{exact:true}));
+    assert.equal(await page.evaluate(()=>window.permissionRequests),1);
+    await page.getByRole('checkbox',{name:'Оплата ноды',exact:true}).uncheck();
+    await page.getByRole('button',{name:'Сохранить типы событий'}).click();
+    await visible(page.getByText('Настройки сохранены',{exact:true}));
+    assert.equal(panelPreferences.eventTypes.includes('billing.reminder'),false);
+    await capture('notification-settings-desktop');
+    await page.reload();
+    await visible(page.getByRole('checkbox',{name:'Оплата ноды',exact:true}));
+    assert.equal(await page.getByRole('checkbox',{name:'Оплата ноды',exact:true}).isChecked(),false);
+  });
+  await scenario('user-editor-tiles', async () => {
+    await page.goto(origin + '/dashboard/management/users');
+    await page.getByText('test_user',{exact:true}).click();
+    await visible(page.getByRole('dialog'));
+    await visible(page.getByText('Лимиты по нодам',{exact:true}));
+    const grid=page.locator('.mantine-Modal-body > div > .mantine-SimpleGrid-root');
+    assert.equal(await grid.count(),1);
+    assert.equal(await grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),2);
+    await capture('user-editor-desktop');
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({width:390,height:844});
+    await page.reload();
+    const mobileGuide = page.getByRole('button', { name: 'Все равно продолжить', exact: true });
+    await visible(mobileGuide); await mobileGuide.click();
+    await page.getByText('test_user',{exact:true}).click();
+    await visible(page.getByRole('dialog'));
+    await visible(page.getByText('Лимиты по нодам',{exact:true}));
+    assert.equal(await page.locator('.mantine-Modal-body > div > .mantine-SimpleGrid-root').count(),0);
+    await noHorizontalOverflow(); await capture('user-editor-mobile');
+    await page.keyboard.press('Escape');
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [path, title, name] of [
     ['/dashboard/tools/limiter', 'Limiter', 'limiter'],
@@ -308,6 +419,8 @@ try {
     ['/dashboard/tools/cloudflare-dns', 'Cloudflare DNS', 'cloudflare'],
     ['/dashboard/tools/cloudflare-dns/settings', 'Настройки Cloudflare', 'cloudflare-settings'],
     ['/dashboard/management/automations', 'Автоматизации', 'automations'],
+    ['/dashboard/events', 'События', 'events'],
+    ['/dashboard/management/ssl-certificates', 'SSL-сертификаты', 'ssl-certificates'],
   ]) {
     await scenario(name + '-mobile', async () => {
     await page.goto(origin + path);

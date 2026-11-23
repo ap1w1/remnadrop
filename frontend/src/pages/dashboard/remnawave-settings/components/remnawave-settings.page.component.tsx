@@ -1,4 +1,5 @@
 import { Container } from '@mantine/core'
+import { NotificationsCardWidget } from '@widgets/remnawave-settings/notifications-card/notifications-card.widget'
 import { FindAllApiTokensCommand, GetRemnawaveSettingsCommand } from '@remnawave/backend-contract'
 import { ApiTokensCardWidget } from '@widgets/remnawave-settings/api-tokens-card/api-tokens-card.widget'
 import { AuthentificationSettingsCardWidget } from '@widgets/remnawave-settings/authentification-settings-card/authentification-settings-card.widget'
@@ -46,6 +47,7 @@ export const RemnawaveSettingsPageComponent = (props: IProps) => {
                     <ApiTokensCardWidget apiTokensData={apiTokensData} />
 
                     <VisualSettingsCardWidget />
+                    <NotificationsCardWidget />
                     <BrandingSettingsCardWidget
                         brandingSettings={remnawaveSettings.brandingSettings}
                     />

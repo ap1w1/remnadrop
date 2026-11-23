@@ -9,11 +9,13 @@ export const ROUTES = {
     DASHBOARD: {
         ROOT: '/dashboard',
         HOME: '/dashboard/home',
+        EVENTS: '/dashboard/events',
         MANAGEMENT: {
             ROOT: '/dashboard/management',
             USERS: '/dashboard/management/users',
             HOSTS: '/dashboard/management/hosts',
             NODES: '/dashboard/management/nodes',
+            SSL_CERTIFICATES: '/dashboard/management/ssl-certificates',
             NODES_BANDWIDTH_TABLE: '/dashboard/management/bandwidth-table',
             NODES_STATS: '/dashboard/management/stats/nodes',
             NODES_METRICS: '/dashboard/management/metrics/nodes',

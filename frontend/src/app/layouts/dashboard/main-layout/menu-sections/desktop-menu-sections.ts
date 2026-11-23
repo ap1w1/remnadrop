@@ -13,6 +13,8 @@ import {
 } from 'react-icons/pi'
 import {
     TbArchive,
+    TbBell,
+    TbCertificate,
     TbCloud,
     TbShieldCheck,
     TbHierarchy3,
@@ -48,7 +50,7 @@ export const useDesktopMenuSections = (): MenuItem[] => {
 
     const menuSections: MenuItem[] = [
         {
-            header: t('constants.home'),
+            header: t('constants.overview'),
             id: 'home',
             icon: TbStar,
             section: [
@@ -57,6 +59,9 @@ export const useDesktopMenuSections = (): MenuItem[] => {
                     href: ROUTES.DASHBOARD.HOME,
                     icon: TbStar,
                     id: 'home'
+                },
+                {
+                    name: 'События', href: ROUTES.DASHBOARD.EVENTS, icon: TbBell, id: 'events'
                 }
             ]
         },
@@ -99,6 +104,7 @@ export const useDesktopMenuSections = (): MenuItem[] => {
                                 { name: 'Мониторинг', id: 'monitoring', href: '/dashboard/management/monitoring', icon: TbDeviceAnalytics },
                 {name:'DPI Checker',id:'dpi-checker',href:'/dashboard/management/dpi-checker',icon:DpiCheckerLogo},
                 {name:'Автоматизации',id:'automations',href:'/dashboard/management/automations',icon:TbRoute},
+                {name:'SSL-сертификаты',id:'ssl-certificates',href:ROUTES.DASHBOARD.MANAGEMENT.SSL_CERTIFICATES,icon:TbCertificate},
                 {name:'Схема связей',id:'node-topology',href:'/dashboard/management/topology',icon:TbHierarchy3},
                 {
                     name: `${t('constants.node-plugins')} β`,

@@ -51,6 +51,8 @@ jobs:
             test -s /app/prisma/migrations/20261122220000_limiter_events/migration.sql
             test -s /app/prisma/migrations/20261122221000_cloudflare_accounts/migration.sql
             test -s /app/prisma/migrations/20261122222000_automation_workflows/migration.sql
+            test -s /app/prisma/migrations/20261123120000_panel_events_ssl/migration.sql
+            test -s /app/frontend/notifications-sw.js
             test -f /app/frontend/index.html
             test -s /app/frontend/assets/wasm_exec.js
             test -s /app/frontend/assets/main.wasm
@@ -70,6 +72,9 @@ jobs:
         if: ${{ always() && !cancelled() && steps.package.outcome == 'success' }}
         run: |
           bash tests/integrations/database-smoke.sh remnadrop-integrations-qa
+      - name: Panel inbox, SSL and push regression tests
+        run: |
+          docker run --rm --network none --entrypoint sh remnadrop-integrations-qa -ec 'node --test scripts/panel-events.test.cjs'
       - name: Agent unit tests
         run: |
           python3 -m unittest discover -s backup-agent -p 'test*.py' -v

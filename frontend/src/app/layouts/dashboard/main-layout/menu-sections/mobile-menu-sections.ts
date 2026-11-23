@@ -15,6 +15,8 @@ import {
 } from 'react-icons/pi'
 import {
     TbArchive,
+    TbBell,
+    TbCertificate,
     TbCloud,
     TbShieldCheck,
     TbHierarchy3,
@@ -55,6 +57,9 @@ export const useMobileMenuSections = (): MenuItem[] => {
                     href: ROUTES.DASHBOARD.HOME,
                     icon: PiStarDuotone,
                     id: 'home'
+                },
+                {
+                    name: 'События', href: ROUTES.DASHBOARD.EVENTS, icon: TbBell, id: 'events'
                 }
             ]
         },
@@ -107,6 +112,7 @@ export const useMobileMenuSections = (): MenuItem[] => {
                                                 { name: 'Мониторинг', id: 'monitoring', href: '/dashboard/management/monitoring', icon: TbDeviceAnalytics },
                         {name:'DPI Checker',id:'dpi-checker',href:'/dashboard/management/dpi-checker',icon:DpiCheckerLogo},
                         {name:'Автоматизации',id:'automations',href:'/dashboard/management/automations',icon:TbRoute},
+                        {name:'SSL-сертификаты',id:'ssl-certificates',href:ROUTES.DASHBOARD.MANAGEMENT.SSL_CERTIFICATES,icon:TbCertificate},
                 {name:'Схема связей',id:'node-topology',href:'/dashboard/management/topology',icon:TbHierarchy3},
                         {
                             name: `${t('constants.node-plugins')} β`,

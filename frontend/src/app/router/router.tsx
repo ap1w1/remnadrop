@@ -46,6 +46,8 @@ import {
 import { ErrorBoundaryHoc } from '@shared/hocs/error-boundary'
 import { AuthGuard } from '@shared/hocs/guards/auth-guard'
 
+import { EventsPage } from '@pages/dashboard/events/events.page'
+import { SslCertificatesPage } from '@pages/dashboard/ssl-certificates/ssl-certificates.page'
 import { ROUTES } from '../../shared/constants'
 import { AuthLayout } from '../layouts/auth'
 import { MainLayout } from '../layouts/dashboard/main-layout/layout'
@@ -64,6 +66,8 @@ const router = createBrowserRouter(
                 </Route>
 
                 <Route element={<MainLayout />} path={ROUTES.DASHBOARD.ROOT}>
+                    <Route path={ROUTES.DASHBOARD.EVENTS} element={<EventsPage />} />
+                    <Route path={ROUTES.DASHBOARD.MANAGEMENT.SSL_CERTIFICATES} element={<SslCertificatesPage />} />
                     <Route path="/dashboard/backups" element={<BackupsPage />} />
                     <Route path="/dashboard/management/topology" element={<NodeTopologyPage />} />
                     <Route path="/dashboard/documentation" element={<DocumentationPage />} />

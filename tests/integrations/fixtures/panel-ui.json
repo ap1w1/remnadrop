@@ -1,0 +1,166 @@
+{
+  "node": {
+    "uuid": "10000000-0000-4000-8000-000000000001",
+    "name": "Финляндия-2",
+    "address": "198.51.100.20",
+    "port": null,
+    "proxyUrl": null,
+    "backupProxyUrl": null,
+    "isConnected": true,
+    "isDisabled": false,
+    "isConnecting": false,
+    "lastStatusChange": null,
+    "lastStatusMessage": null,
+    "isTrafficTrackingActive": false,
+    "trafficResetDay": null,
+    "trafficLimitBytes": null,
+    "trafficUsedBytes": null,
+    "notifyPercent": null,
+    "viewPosition": 0,
+    "countryCode": "FI",
+    "consumptionMultiplier": 1,
+    "nodeConsumptionMultiplier": 1,
+    "tags": [],
+    "createdAt": "2026-11-23T12:00:00.000Z",
+    "updatedAt": "2026-11-23T12:00:00.000Z",
+    "configProfile": {
+      "activeConfigProfileUuid": null,
+      "activeInbounds": []
+    },
+    "providerUuid": null,
+    "provider": null,
+    "activePluginUuid": null,
+    "system": null,
+    "versions": null,
+    "xrayUptime": 0,
+    "usersOnline": 0,
+    "note": null
+  },
+  "user": {
+    "uuid": "10000000-0000-4000-8000-000000000002",
+    "id": 100,
+    "shortUuid": "test-user",
+    "username": "test_user",
+    "status": "ACTIVE",
+    "trafficLimitBytes": 107374182400,
+    "trafficLimitStrategy": "NO_RESET",
+    "expireAt": "2027-01-01T00:00:00.000Z",
+    "telegramId": null,
+    "email": null,
+    "description": "Тестовый пользователь",
+    "tag": null,
+    "hwidDeviceLimit": null,
+    "externalSquadUuid": null,
+    "trojanPassword": "",
+    "vlessUuid": "10000000-0000-4000-8000-000000000001",
+    "ssPassword": "",
+    "lastTriggeredThreshold": 0,
+    "subRevokedAt": null,
+    "lastTrafficResetAt": null,
+    "createdAt": "2026-11-23T12:00:00.000Z",
+    "updatedAt": "2026-11-23T12:00:00.000Z",
+    "subscriptionUrl": "https://example.invalid/sub/test",
+    "activeInternalSquads": [],
+    "userTraffic": {
+      "usedTrafficBytes": 10737418240,
+      "lifetimeUsedTrafficBytes": 21474836480,
+      "onlineAt": null,
+      "firstConnectedAt": null,
+      "lastConnectedNodeUuid": null
+    }
+  },
+  "settings": {
+    "passkeySettings": {
+      "enabled": false,
+      "rpId": null,
+      "origin": null
+    },
+    "oauth2Settings": {
+      "github": {
+        "enabled": false,
+        "clientId": null,
+        "clientSecret": null,
+        "allowedEmails": []
+      },
+      "pocketid": {
+        "enabled": false,
+        "clientId": null,
+        "clientSecret": null,
+        "plainDomain": null,
+        "allowedEmails": []
+      },
+      "yandex": {
+        "enabled": false,
+        "clientId": null,
+        "clientSecret": null,
+        "allowedEmails": []
+      },
+      "keycloak": {
+        "enabled": false,
+        "realm": null,
+        "frontendDomain": null,
+        "keycloakDomain": null,
+        "clientId": null,
+        "clientSecret": null,
+        "allowedEmails": []
+      },
+      "generic": {
+        "enabled": false,
+        "frontendDomain": null,
+        "tokenUrl": null,
+        "clientId": null,
+        "clientSecret": null,
+        "withPkce": false,
+        "authorizationUrl": null,
+        "allowedEmails": []
+      },
+      "telegram": {
+        "enabled": false,
+        "clientId": null,
+        "clientSecret": null,
+        "allowedIds": [],
+        "frontendDomain": null
+      }
+    },
+    "passwordSettings": {
+      "enabled": true
+    },
+    "brandingSettings": {
+      "title": null,
+      "logoUrl": null
+    }
+  },
+  "stats": {
+    "cpu": {
+      "cores": 0
+    },
+    "memory": {
+      "total": 0,
+      "free": 0,
+      "used": 0
+    },
+    "uptime": 0,
+    "timestamp": 0,
+    "users": {
+      "statusCounts": {},
+      "totalUsers": 0
+    },
+    "onlineStats": {
+      "lastDay": 0,
+      "lastWeek": 0,
+      "neverOnline": 0,
+      "onlineNow": 0
+    },
+    "nodes": {
+      "totalOnline": 0,
+      "totalBytesLifetime": ""
+    }
+  },
+  "tags": {
+    "tags": []
+  },
+  "externalSquads": {
+    "total": 0,
+    "externalSquads": []
+  }
+}

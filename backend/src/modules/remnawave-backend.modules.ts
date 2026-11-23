@@ -1,4 +1,5 @@
 import { BackupsModule } from './backups/backups.module';
+import { PanelEventsModule } from './panel-events/panel-events.module';
 import { Module } from '@nestjs/common';
 import { SquadQuotasModule } from './squad-quotas/squad-quotas.module';
 import { NodeOperationsModule } from './node-operations/node-operations.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module';
 
 @Module({
     imports: [
+        PanelEventsModule,
         SquadQuotasModule,
         NodeOperationsModule,
         ConditionalModule.registerWhen(BackupsModule, () => isRestApi()),

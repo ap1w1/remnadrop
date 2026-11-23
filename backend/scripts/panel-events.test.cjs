@@ -1,0 +1,203 @@
+const { test, before, after, beforeEach } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { PGlite } = require('@electric-sql/pglite');
+const { PanelEventsService } = require('../dist/src/modules/panel-events/panel-events.service');
+const { SslCertificatesService } = require('../dist/src/modules/panel-events/ssl-certificates.service');
+const { PanelPushService } = require('../dist/src/modules/panel-events/panel-push.service');
+const { PanelEventsWorker } = require('../dist/src/modules/panel-events/panel-events.worker');
+const { dueReminder, certificateSchema, validPushEndpoint } = require('../dist/src/modules/panel-events/event-policy');
+const webPush = require('web-push');
+const admin = '11111111-1111-4111-8111-111111111111';
+const other = '22222222-2222-4222-8222-222222222222';
+const node = '33333333-3333-4333-8333-333333333333';
+const execution = '44444444-4444-4444-8444-444444444444';
+let pg, db, events, ssl, push;
+const sql = (strings, values) => strings.reduce((text, part, i) => text + part + (i < values.length ? `$${i + 1}` : ''), '');
+function adapter(connection) {
+    return {
+        $queryRaw: async (strings, ...values) => (await connection.query(sql(strings, values), values.map(v => typeof v === 'bigint' ? String(v) : v))).rows,
+        $executeRaw: async (strings, ...values) => (await connection.query(sql(strings, values), values.map(v => typeof v === 'bigint' ? String(v) : v))).affectedRows,
+        $transaction: callback => connection.transaction(tx => callback(adapter(tx))),
+        nodes: { count: async ({ where }) => (await connection.query('SELECT count(*)::int AS count FROM nodes WHERE uuid=ANY($1::uuid[])', [where.uuid.in])).rows[0].count },
+    };
+}
+const eventCount = async () => Number((await pg.query('SELECT count(*) AS n FROM panel_events')).rows[0].n);
+const offsetDate = offset => { const d = new Date(); d.setUTCDate(d.getUTCDate() + offset); return d.toISOString().slice(0, 10); };
+const certInput = () => ({ name: 'Edge TLS', domain: '*.example.com', nodeUuids: [node], expiresOn: offsetDate(3), reminderDays: [3, 2, 1], enabled: true });
+before(async () => {
+    pg = new PGlite();
+    await pg.exec(`CREATE TABLE admin(uuid uuid PRIMARY KEY);
+        CREATE TABLE nodes(uuid uuid PRIMARY KEY,name text,is_connected boolean DEFAULT true,is_disabled boolean DEFAULT false);
+        CREATE TABLE node_metric_alert_events(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),node_uuid uuid,metric text,active boolean,value float8,threshold float8);
+        CREATE TABLE node_automation_executions(id uuid PRIMARY KEY,rule_name text,node_uuid uuid,source text,status text DEFAULT 'running');`);
+    await pg.exec(fs.readFileSync(path.join(__dirname, '../prisma/migrations/20261123120000_panel_events_ssl/migration.sql'), 'utf8'));
+    db = adapter(pg); events = new PanelEventsService(db); ssl = new SslCertificatesService(db); push = new PanelPushService(db);
+});
+beforeEach(async () => {
+    await pg.exec('TRUNCATE admin,nodes,node_metric_alert_events,node_automation_executions,panel_events,ssl_certificates RESTART IDENTITY CASCADE');
+    await pg.query('INSERT INTO admin VALUES($1),($2)', [admin, other]);
+    await pg.query("INSERT INTO nodes(uuid,name) VALUES($1,'Frankfurt')", [node]);
+    process.env.SSL_WEBHOOK_URL = 'https://hooks.example.com/ssl';
+    process.env.SSL_WEBHOOK_SECRET = 'test-secret-that-is-longer-than-32-characters';
+});
+after(async () => { await pg.close(); });
+
+test('UTC reminder thresholds, leap dates and missed scheduler runs', () => {
+    assert.equal(dueReminder('2028-03-01', [3, 2, 1], new Date('2028-02-27T23:59:59Z')), 3);
+    assert.equal(dueReminder('2028-03-01', [3, 2, 1], new Date('2028-02-28T00:00:00Z')), 2);
+    assert.equal(dueReminder('2028-03-01', [3, 1], new Date('2028-02-28T00:00:00Z')), 3);
+    assert.equal(dueReminder('2028-03-01', [3, 2, 1], new Date('2028-03-03T00:00:00Z')), 0);
+    assert.equal(dueReminder('2028-03-01', [3, 2, 1], new Date('2028-02-01T00:00:00Z')), null);
+    assert.equal(certificateSchema.safeParse({ ...certInput(), expiresOn: '2027-02-29' }).success, false);
+    assert.equal(certificateSchema.safeParse({ ...certInput(), reminderDays: [0] }).success, false);
+});
+test('node transitions are captured once and disabled nodes stay quiet', async () => {
+    await pg.query('UPDATE nodes SET is_connected=false WHERE uuid=$1', [node]);
+    await pg.query('UPDATE nodes SET is_connected=false WHERE uuid=$1', [node]);
+    await pg.query('UPDATE nodes SET is_connected=true WHERE uuid=$1', [node]);
+    await pg.query('UPDATE nodes SET is_disabled=true,is_connected=false WHERE uuid=$1', [node]);
+    assert.deepEqual((await events.list(admin, {})).response.items.map(e => e.type), ['node.online', 'node.offline']);
+});
+test('CPU, RAM and automation triggers persist with the source transaction', async () => {
+    await pg.query("INSERT INTO node_metric_alert_events(node_uuid,metric,active,value,threshold) VALUES($1,'cpu',true,96,90),($1,'memory',false,50,90)", [node]);
+    await pg.query("INSERT INTO node_automation_executions(id,rule_name,node_uuid,source) VALUES($1,'Failover',$2,'automatic')", [execution, node]);
+    await pg.query("UPDATE node_automation_executions SET status='failed' WHERE id=$1", [execution]);
+    await pg.query("UPDATE node_automation_executions SET status='failed' WHERE id=$1", [execution]);
+    const feed = (await events.list(admin, {})).response;
+    assert.equal(feed.unread, 4);
+    assert.deepEqual(feed.items.map(e => e.type), ['automation.failed', 'automation.triggered', 'metric.memory', 'metric.cpu']);
+    assert.equal(feed.items.at(-1).severity, 'warning');
+});
+test('billing deduplicates a reminder but preserves different due dates and thresholds', async () => {
+    const event = { eventName: 'crm.infra_billing_node_payment_in_24hrs', data: { nodeName: 'Frankfurt', providerName: 'Provider', nextBillingAt: new Date('2026-12-01'), loginUrl: 'https://example.com' } };
+    await events.billing(event); await events.billing(event);
+    await events.billing({ ...event, eventName: 'crm.infra_billing_node_payment_due_today' });
+    assert.equal(await eventCount(), 2);
+});
+test('read receipts are per admin, snapshot bounded, idempotent and do not hide late commits', async () => {
+    await pg.query('UPDATE nodes SET is_connected=false WHERE uuid=$1', [node]);
+    const snapshot = (await events.list(admin, {})).response;
+    await pg.query('UPDATE nodes SET is_connected=true WHERE uuid=$1', [node]);
+    await events.read(admin, { through: snapshot.latestId });
+    await events.read(admin, { through: snapshot.latestId });
+    assert.equal((await events.list(admin, {})).response.unread, 1);
+    assert.equal((await events.list(other, {})).response.unread, 2);
+    await events.read(admin, { through: '99999' });
+    await pg.exec("INSERT INTO panel_events(id,source_key,type,severity,title,message) VALUES(0,'late-transaction','node.offline','error','Late commit','')");
+    assert.equal((await events.list(admin, {})).response.unread, 1);
+    await assert.rejects(() => events.read(admin, { through: '-1' }));
+});
+test('event pagination and filters do not alter the global unread count', async () => {
+    await pg.query('UPDATE nodes SET is_connected=false WHERE uuid=$1', [node]);
+    await pg.query('UPDATE nodes SET is_connected=true WHERE uuid=$1', [node]);
+    const first = (await events.list(admin, { limit: '1' })).response;
+    const second = (await events.list(admin, { before: first.items[0].id, type: 'node.offline' })).response;
+    assert.equal(second.items.length, 1); assert.equal(second.unread, 2);
+    assert.equal((await events.list(admin, { severity: 'warning' })).response.items.length, 0);
+    await assert.rejects(() => events.list(admin, { limit: '1000' }));
+});
+test('SSL CRUD validates nodes and schedules one event and one webhook per threshold', async () => {
+    await assert.rejects(() => ssl.save(undefined, { ...certInput(), nodeUuids: [admin] }));
+    const { response: saved } = await ssl.save(undefined, certInput());
+    const cert = (await ssl.list()).response[0];
+    assert.equal(cert.id, saved.id); assert.deepEqual(cert.nodeNames, ['Frankfurt']);
+    await ssl.reminders(); await ssl.reminders();
+    assert.equal(await eventCount(), 1);
+    assert.equal((await pg.query('SELECT * FROM panel_webhook_deliveries')).rows.length, 1);
+    assert.equal((await events.list(admin, {})).response.items[0].data.reminderDays, 3);
+    await ssl.save(saved.id, { ...certInput(), expiresOn: offsetDate(40) });
+    await ssl.reminders(); assert.equal(await eventCount(), 1);
+    await ssl.save(saved.id, { ...certInput(), expiresOn: offsetDate(2) });
+    await ssl.reminders(); assert.equal(await eventCount(), 2);
+    await ssl.remove(saved.id); assert.equal((await ssl.list()).response.length, 0);
+    assert.equal(await eventCount(), 2); // Historic events survive removal.
+});
+test('expired, paused and deleted-node certificates have defined reminder behavior', async () => {
+    const saved = (await ssl.save(undefined, { ...certInput(), expiresOn: offsetDate(-10), enabled: false })).response;
+    await ssl.reminders(); assert.equal(await eventCount(), 0);
+    await ssl.save(saved.id, { ...certInput(), expiresOn: offsetDate(-10) });
+    await ssl.reminders(); await ssl.reminders();
+    assert.equal((await events.list(admin, {})).response.items[0].type, 'ssl.expired');
+    assert.equal(await eventCount(), 1);
+    await pg.query('DELETE FROM nodes WHERE uuid=$1', [node]);
+    await ssl.reminders(); assert.equal(await eventCount(), 1);
+});
+test('push endpoint allowlist rejects local, insecure and lookalike destinations', () => {
+    for (const endpoint of ['http://fcm.googleapis.com/send/x', 'https://localhost/push', 'https://fcm.googleapis.com.attacker.test/x', 'https://fcm.googleapis.com:444/x', 'https://a:b@fcm.googleapis.com/x']) assert.equal(validPushEndpoint(endpoint), false);
+    for (const endpoint of ['https://fcm.googleapis.com/fcm/send/a', 'https://updates.push.services.mozilla.com/wpush/v2/a', 'https://web.push.apple.com/a']) assert.equal(validPushEndpoint(endpoint), true);
+});
+test('push respects type selection, retries failures and removes expired subscriptions', async () => {
+    const keys = webPush.generateVAPIDKeys();
+    process.env.WEB_PUSH_PUBLIC_KEY = keys.publicKey; process.env.WEB_PUSH_PRIVATE_KEY = keys.privateKey; process.env.WEB_PUSH_SUBJECT = 'mailto:test@example.com';
+    const subscription = { endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: keys.publicKey, auth: Buffer.alloc(16).toString('base64url') } };
+    await events.savePreferences(admin, { browserEnabled: true, eventTypes: ['node.offline'] });
+    await push.subscribe(admin, subscription);
+    await pg.query('UPDATE nodes SET is_connected=false WHERE uuid=$1', [node]);
+    await pg.query('UPDATE nodes SET is_connected=true WHERE uuid=$1', [node]);
+    assert.equal((await pg.query('SELECT * FROM panel_push_deliveries')).rows.length, 1);
+    const original = webPush.sendNotification;
+    try {
+        let sent = 0;
+        webPush.sendNotification = async () => { sent++; throw { statusCode: 503 }; };
+        await push.deliver(); assert.equal(sent, 1);
+        const failed = (await pg.query('SELECT * FROM panel_push_deliveries')).rows[0];
+        assert.equal(failed.attempts, 1); assert.equal(failed.delivered_at, null); assert.equal(failed.lease_until, null);
+        await pg.exec('UPDATE panel_push_deliveries SET next_attempt_at=now()');
+        webPush.sendNotification = async () => { throw { statusCode: 410 }; };
+        await push.deliver(); assert.equal((await pg.query('SELECT * FROM panel_push_subscriptions')).rows.length, 0);
+    } finally { webPush.sendNotification = original; }
+});
+test('push preference changes cancel queued types and account changes discard old deliveries', async () => {
+    const keys = webPush.generateVAPIDKeys();
+    process.env.WEB_PUSH_PUBLIC_KEY = keys.publicKey; process.env.WEB_PUSH_PRIVATE_KEY = keys.privateKey; process.env.WEB_PUSH_SUBJECT = 'mailto:test@example.com';
+    const subscription = { endpoint: 'https://fcm.googleapis.com/fcm/send/test', keys: { p256dh: keys.publicKey, auth: Buffer.alloc(16).toString('base64url') } };
+    await push.subscribe(admin, subscription);
+    await pg.query('UPDATE nodes SET is_connected=false WHERE uuid=$1', [node]);
+    await events.savePreferences(admin, { browserEnabled: false, eventTypes: [] });
+    const original = webPush.sendNotification;
+    try {
+        webPush.sendNotification = async () => { assert.fail('unselected events must not be sent'); };
+        await push.deliver();
+        assert.ok((await pg.query('SELECT * FROM panel_push_deliveries')).rows[0].delivered_at);
+        await push.subscribe(other, subscription);
+        assert.equal((await pg.query('SELECT * FROM panel_push_deliveries')).rows.length, 0);
+        await push.unsubscribe(admin, { endpoint: subscription.endpoint });
+        assert.equal((await pg.query('SELECT * FROM panel_push_subscriptions')).rows.length, 1);
+        await push.unsubscribe(other, { endpoint: subscription.endpoint });
+        assert.equal((await pg.query('SELECT * FROM panel_push_subscriptions')).rows.length, 0);
+    } finally { webPush.sendNotification = original; }
+});
+test('webhook failure remains pending and is rescheduled without duplicating the inbox', async () => {
+    await ssl.save(undefined, certInput()); await ssl.reminders();
+    // The sender rejects this destination before DNS or network access.
+    await pg.exec("UPDATE panel_webhook_deliveries SET destination='http://localhost/blocked'");
+    const worker = new PanelEventsWorker(db, ssl, push);
+    await worker.webhooks();
+    const row = (await pg.query('SELECT * FROM panel_webhook_deliveries')).rows[0];
+    assert.equal(row.attempts, 1); assert.equal(row.delivered_at, null); assert.equal(row.lease_until, null);
+    assert.equal(await eventCount(), 1);
+});
+
+test('service worker displays a push and focuses the inbox without trusting payload navigation', async () => {
+    const { runInNewContext } = require('node:vm');
+    const handlers = {}, shown = [], opened = [];
+    const source = [path.join(__dirname, '../frontend/notifications-sw.js'), path.join(__dirname, '../../frontend/public/notifications-sw.js')].find(file => fs.existsSync(file));
+    runInNewContext(fs.readFileSync(source, 'utf8'), { URL, self: {
+        addEventListener: (type, handler) => { handlers[type] = handler; },
+        location: { origin: 'https://panel.example.com' },
+        registration: { showNotification: async (title, options) => shown.push({ title, options }) },
+        clients: { matchAll: async () => [], openWindow: async url => opened.push(url) },
+    } });
+    let pending;
+    handlers.push({ data: { json: () => ({ id: '42', title: 'SSL reminder', body: 'Example', url: 'https://untrusted.example/' }) }, waitUntil: promise => { pending = promise; } });
+    await pending;
+    assert.equal(shown[0].options.tag, 'panel-event-42');
+    let closed = false;
+    handlers.notificationclick({ notification: { close: () => { closed = true; } }, waitUntil: promise => { pending = promise; } });
+    await pending;
+    assert.equal(closed, true); assert.deepEqual(opened, ['https://panel.example.com/dashboard/events']);
+    handlers.push({ data: { json: () => { throw new Error('Malformed push'); } } });
+    assert.equal(shown.length, 1);
+});

@@ -45,6 +45,15 @@ CA certificates, and the integration migration in the built image before
 switching the running panel. The upstream version label remains 2.8.1; the
 RemnaDrop Git revision identifies these fork features.
 
+## Events, browser notifications and SSL certificates
+
+**Overview → Events** collects node state changes, automation runs/failures, billing,
+SSL and metric alerts. The header button shows a per-admin unread count. Browser
+notification types and per-device Web Push are configured in panel settings.
+**Nodes → SSL certificates** tracks certificates assigned to nodes and sends expiry
+reminders to the inbox and signed webhooks. See [EVENTS_AND_SSL.md](EVENTS_AND_SSL.md)
+for VAPID keys, webhook configuration, date semantics and tests.
+
 ## Verification
 
 Use Node.js 24.22.3. In backend: `npm ci`, `npm run migrate:generate`,
