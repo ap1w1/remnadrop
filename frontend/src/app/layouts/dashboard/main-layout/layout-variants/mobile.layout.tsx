@@ -39,7 +39,7 @@ export const MobileLayout = (props: IProps) => {
                             withLanguage={false}
                             withEvents={false}
                             withLogout={false}
-                            withVersion={false}
+                            withVersion
                             withGithub={false}
                             withPrime={false}
                         />

@@ -32,6 +32,7 @@ export function MainLayout() {
             stars={remnawaveInfo.starsCount || undefined}
             withGithub={false}
             withRecap={!isMobile}
+            withVersion={!isMobile}
             withSupport
             withTelegram={!isMobile}
         /></>
