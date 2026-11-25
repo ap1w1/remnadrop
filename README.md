@@ -65,8 +65,5 @@ sudo remnadrop status
 
 Маршруты форка и схемы запросов доступны в разделе **Документация API** панели. Примеры групп квот и событий находятся в [QUOTAS.md](QUOTAS.md). События форка отправляются через штатные `WEBHOOK_ENABLED`, `WEBHOOK_URL`, `WEBHOOK_SECRET_HEADER`, с заголовками `X-Remnawave-Signature` и `X-Remnawave-Timestamp`. Отдельные ключи для вебхуков квот не требуются.
 
-## Разработка и безопасность
-
-Для локальной изолированной разработки используйте `node init-dev.mjs` и [`compose.dev.yml`](compose.dev.yml). Локальные `.env`, дампы БД, ключи, сертификаты и сборочные артефакты исключены из Git. Перед публикацией запускайте `python3 scripts/audit-public-source.py` и проверяйте его находки; автоматическая проверка дополняет ручной обзор и не доказывает отсутствие всех видов секретов.
 
 Исходные проекты Remnawave имеют лицензию **AGPL-3.0-only**; её текст находится в [LICENSE](LICENSE). Встроенный исходный код Limiter сохраняет собственный файл лицензии в [`integrations/limiter-runtime/vendor/LICENSE`](integrations/limiter-runtime/vendor/LICENSE). Форк не связан с официальной командой Remnawave.
