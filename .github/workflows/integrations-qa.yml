@@ -37,6 +37,8 @@ jobs:
           node-version: '24'
       - name: Deployment and Limiter runtime regression tests
         run: |
+          bash -n scripts/remnadrop-cli.sh
+          bash tests/remnadrop-source-sync.sh
           sudo python3 -m unittest discover -s tests -v
           node --test tests/limiter-runtime.cjs
       - name: Build application image

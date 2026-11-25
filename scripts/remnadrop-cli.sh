@@ -22,6 +22,28 @@ check_clean() {
   [ -z "$(git -C "$REPO" status --porcelain)" ] || fail "Uncommitted/untracked files in $REPO; refusing automatic update"
   [ "$(git -C "$REPO" branch --show-current)" = main ] || fail "Expected branch main"
 }
+update_source() {
+  local old_sha target_sha remote_heads backup_ref
+  old_sha="$(git -C "$REPO" rev-parse HEAD)"
+  say 'Fetching GitHub repository...'
+  git -C "$REPO" fetch --no-tags origin main
+  target_sha="$(git -C "$REPO" rev-parse --verify 'refs/remotes/origin/main^{commit}')"
+  [ -n "$target_sha" ] || fail 'Could not resolve origin/main after fetch'
+  if git -C "$REPO" merge-base --is-ancestor "$old_sha" "$target_sha"; then
+    git -C "$REPO" merge --ff-only "$target_sha"
+  else
+    # A force-pushed main can have an unrelated root. Never discard local-only commits.
+    remote_heads="$(git -C "$REPO" reflog show --format=%H refs/remotes/origin/main)" ||
+      fail 'Cannot verify previous origin/main; see INSTALL.md for manual recovery'
+    grep -Fxq -- "$old_sha" <<< "$remote_heads" ||
+      fail 'Local main was not a previous origin/main; refusing to replace local commits'
+    backup_ref="refs/remnadrop/previous-main/$(date -u +%Y%m%dT%H%M%SZ)-${old_sha:0:12}"
+    git -C "$REPO" update-ref "$backup_ref" "$old_sha"
+    say "Git history changed; saved previous main as $backup_ref"
+    git -C "$REPO" reset --hard "$target_sha"
+  fi
+  check_clean
+}
 snapshot() {
   SHA="$1"
   SHORTSHA="$(printf '%s' "$SHA" | cut -c1-12)"
@@ -43,6 +65,8 @@ snapshot() {
     mv -T "$TEMP" "$RELEASE"
   fi
 }
+
+if [[ ${BASH_SOURCE[0]} != "$0" ]]; then return 0; fi
 
 case "$ACTION" in
   help|-h|--help|"")
@@ -73,7 +97,7 @@ HELP
     ;;
   check|update)
     [ "$(id -u)" -eq 0 ] || fail "Run as root: sudo remnadrop $ACTION"
-    for x in git docker tar flock python3 awk cut; do need "$x"; done
+    for x in git docker tar flock python3 awk cut grep date; do need "$x"; done
     check_repo
     mkdir -p "$INSTALL_DIR"
     exec 7>"$INSTALL_DIR/.remnadrop-git-update.lock"
@@ -81,9 +105,7 @@ HELP
     check_clean
 
     if [ "$ACTION" = update ]; then
-      say 'Fetching GitHub repository...'
-      git -C "$REPO" pull --ff-only origin main
-      check_clean
+      update_source
     fi
 
     SHA="$(git -C "$REPO" rev-parse HEAD)"
