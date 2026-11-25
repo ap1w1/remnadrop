@@ -1,0 +1,66 @@
+# syntax=docker/dockerfile:1.7
+
+FROM golang:1.27-alpine AS limiter-build
+RUN apk add --no-cache python3
+WORKDIR /limiter
+COPY integrations/limiter-runtime/vendor/ ./
+COPY integrations/limiter-runtime/overlay/ /remnadrop/integrations/limiter-runtime/overlay/
+COPY scripts/patch-limiter.py /remnadrop/scripts/patch-limiter.py
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    python3 /remnadrop/scripts/patch-limiter.py /limiter \
+    && go test ./... \
+    && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/remnawave-limiter ./cmd/limiter
+
+FROM node:24.22.3-trixie-slim AS frontend-build
+WORKDIR /build
+COPY frontend/package*.json ./
+COPY frontend/.npmrc ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+# Use the local fork contracts and Subpage types (not the published 2.8.x npm versions).
+# Otherwise new node fields are stripped by old Zod schemas on the frontend.
+COPY backend/libs/contract /fork-libs/contract
+COPY backend/libs/subscription-page /fork-libs/subscription-page
+RUN ln -s /build/node_modules /fork-libs/contract/node_modules \
+    && ln -s /build/node_modules /fork-libs/subscription-page/node_modules \
+    && /build/node_modules/.bin/tsc -p /fork-libs/contract/tsconfig.backend.json \
+    && /build/node_modules/.bin/tsc -p /fork-libs/contract/tsconfig.frontend.json \
+    && /build/node_modules/.bin/tsc -p /fork-libs/subscription-page/tsconfig.backend.json \
+    && /build/node_modules/.bin/tsc -p /fork-libs/subscription-page/tsconfig.frontend.json \
+    && cp -a /fork-libs/contract/build/. /build/node_modules/@remnawave/backend-contract/build/ \
+    && cp -a /fork-libs/subscription-page/build/. /build/node_modules/@remnawave/subscription-page-types/build/
+COPY frontend/ ./
+COPY editor-assets.lock.json /remnadrop/editor-assets.lock.json
+COPY scripts/fetch-editor-assets.mjs /remnadrop/scripts/fetch-editor-assets.mjs
+RUN node /remnadrop/scripts/fetch-editor-assets.mjs /build/public/assets \
+    && NODE_OPTIONS=--max-old-space-size=3072 npm run start:build
+
+FROM node:24.22.3-trixie-slim AS backend-build
+WORKDIR /app
+ENV HUSKY=0
+COPY backend/package*.json ./
+COPY backend/.npmrc ./
+COPY backend/patches ./patches
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY backend/prisma ./prisma
+COPY backend/prisma.config.ts ./
+COPY backend/ ./
+RUN DATABASE_URL=postgresql://postgres:postgres@localhost:5432/build npm run migrate:generate
+COPY --from=frontend-build /build/dist ./frontend
+RUN NODE_OPTIONS=--max-old-space-size=3072 npm run build && npm run build:seed
+
+FROM backend-build AS development
+ENV NODE_ENV=production
+# Build the pinned upstream engine with the panel adapter; Telegram and the UI
+# share the original actions, runtime settings, ignore state and restore queue.
+COPY --from=limiter-build /out/remnawave-limiter /usr/local/bin/remnawave-limiter
+COPY integrations/limiter-runtime/vendor/LICENSE /usr/share/doc/remnawave-limiter/LICENSE
+# Go uses the OS trust store for Telegram/MaxMind HTTPS and local time zones
+# for daily reports. The Node slim image does not include both by default.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /var/lib/remnawave/limiter/geoip \
+    && chown -R 10001:10001 /var/lib/remnawave/limiter \
+    && chmod 755 /usr/local/bin/remnawave-limiter
+COPY backend/configs /var/lib/remnawave/configs
+CMD ["node", "dist/src/main.js"]

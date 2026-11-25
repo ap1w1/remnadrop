@@ -1,0 +1,1 @@
+ALTER TABLE "hosts" ALTER COLUMN "remark" TYPE VARCHAR(120);

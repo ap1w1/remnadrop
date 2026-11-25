@@ -1,0 +1,76 @@
+# Установка и обновление RemnaDrop
+
+Установщик переводит **существующую Remnawave 2.8.1** на форк RemnaDrop. Он сохраняет пользователей, ноды, токены, домены, PostgreSQL и Redis. Репозиторий не является универсальным установщиком с пустого сервера и не рассчитан на миграцию с Remnawave 3.x.
+
+## 1. Проверка сервера
+
+- Ubuntu или Debian, Docker Engine и плагин `docker compose`, Git, Python 3, работающий reverse proxy.
+- Панель Remnawave **2.8.1** и работающие контейнеры `remnawave`, `remnawave-db`, `remnawave-redis`. Имена Compose-сервисов должны соответствовать именам контейнеров.
+- Для панели: минимум 2 ГБ ОЗУ, 2 vCPU и 20 ГБ диска по [требованиям Remnawave](https://docs.rw/install/requirements/). Для сборки на этом же сервере рекомендуются 4 ГБ ОЗУ, 2 ГБ swap и диск от 40 ГБ. Обновлятор требует минимум 4 ГБ свободного места перед сборкой и после сборки рассчитывает резерв с учётом размеров БД и старого контейнера.
+- Доступ к GitHub и реестру образов с VPS. Сохраните текущую копию конфигурации и проверьте, что знаете способ входа в панель после обновления.
+
+Проверка без изменений:
+
+```bash
+docker compose version
+docker inspect -f '{{.Name}} {{.Config.Image}} {{.State.Running}}' remnawave remnawave-db remnawave-redis
+free -h
+df -h /opt/remnawave
+```
+
+Если ставите панель **на новый VPS**, сначала разверните оригинальную Remnawave именно версии 2.8.1 и убедитесь, что эти три контейнера работают. Затем переходите к шагу 2. Не используйте инструкции или Compose-файлы от более новой версии Remnawave для подготовки миграции 2.8.1.
+
+## 2. Подключение форка
+
+```bash
+sudo git clone https://github.com/ap1w1/remnadrop.git /opt/remnadrop-git
+sudo install -m 755 /opt/remnadrop-git/scripts/remnadrop-cli.sh /usr/local/bin/remnadrop
+sudo remnadrop check
+```
+
+`check` создаёт снимок исходников и выполняет предварительную проверку без сборки, миграций и перезапуска панели. Если он сообщает об ошибке, исправьте её до обновления. Проверьте, что на диске достаточно места для нового образа, дампа БД и сохранения старого контейнера.
+
+## 3. Обновление
+
+```bash
+sudo remnadrop update
+sudo remnadrop status
+```
+
+Команда получает `main`, собирает образ из исходников форка, создаёт и проверяет резервную копию PostgreSQL и конфигурации, применяет миграции, пересоздаёт **только панель**, а затем проверяет образ, HTTP и состояние контейнера. PostgreSQL и Redis не пересоздаются. Сборка может длиться несколько минут.
+
+В выводе `update` сохраните строки **Backup** и **Rollback**. Не удаляйте старый образ и каталог копии, пока не проверены вход, пользователи, ссылки подписок, ноды и вебхуки.
+
+После установки:
+
+```bash
+export COMPOSE_FILE="$(cat /opt/remnawave/.panel-compose-files)"
+docker compose --project-directory /opt/remnawave ps
+docker logs --tail=100 remnawave
+```
+
+Файл `/opt/remnawave/.panel-compose-files` содержит последовательность Compose-файлов с override форка. Используйте её для дальнейших операций Compose. Для следующего обновления достаточно `sudo remnadrop update`.
+
+## Если серверный клон создан до очистки истории Git
+
+После публикации сокращённой истории старый `sudo remnadrop update` не сможет выполнить `git pull --ff-only`: прежний и новый `main` не имеют общего пути быстрого перемещения. Это относится **только к клону исходников** `/opt/remnadrop-git`, не к базе данных и не к работающему контейнеру.
+
+Сначала убедитесь, что `sudo git -C /opt/remnadrop-git status --short` ничего не выводит. Если там есть изменения, сохраните их отдельно и разберите вручную. Для чистого клона выполните:
+
+```bash
+sudo git -C /opt/remnadrop-git fetch origin main
+sudo git -C /opt/remnadrop-git switch main
+sudo git -C /opt/remnadrop-git branch backup-before-history-cleanup
+sudo git -C /opt/remnadrop-git reset --hard origin/main
+sudo install -m 755 /opt/remnadrop-git/scripts/remnadrop-cli.sh /usr/local/bin/remnadrop
+sudo remnadrop check
+sudo remnadrop update
+```
+
+Локальная ветка `backup-before-history-cleanup` сохраняет прежнюю историю на VPS для разбора, но не публикуется в GitHub. Если ветка уже существует, выберите другое имя. `reset --hard` применяйте только после проверки чистоты клона.
+
+## Откат
+
+Используйте **точную команду Rollback из вывода своего обновления**. Она указывает конкретный снимок исходников и каталог резервной копии. Откат восстанавливает БД в отдельное место и запускает сохранённый старый образ. Изменения, сделанные после резервной копии, не появятся в восстановленной панели. Не запускайте старый образ поверх БД с новыми миграциями.
+
+Для подробной подготовки миграции и проверки дампа см. [MIGRATION.md](MIGRATION.md). Настройка резервного копирования описана в [BACKUPS.md](BACKUPS.md). Настоящие `.env`, ключи и резервные копии храните вне Git.

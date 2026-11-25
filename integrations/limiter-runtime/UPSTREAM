@@ -1,0 +1,10 @@
+Repository: https://github.com/syvlech/remnawave-limiter
+Commit: c5ce367c5f38a345fad59bb813fd9fd67c80a329
+Version: 5.1.0
+
+The pinned build source, including its GPL-3.0 LICENSE, is committed in vendor/.
+Docker builds use that local copy and apply scripts/patch-limiter.py; they do
+not fetch Limiter source or its container image from GitHub. The adapter keeps
+the upstream action handler, monitor, grouping rules, restore queue, settings
+manager, and Telegram bot. Unused upstream deployment files and the GitHub
+update checker are omitted from the vendored copy.

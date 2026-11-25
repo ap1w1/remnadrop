@@ -1,0 +1,42 @@
+# Never commit runtime secrets or credentials
+**/.env
+**/.env.*
+!**/.env.sample
+!**/.env.example
+**/secrets/**
+**/credentials/**
+**/id_rsa*
+**/id_ed25519*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.kdbx
+
+# Generated build/dependencies
+**/node_modules/
+**/dist/
+**/build/
+**/.next/
+**/.cache/
+**/coverage/
+*.log
+*.pid
+
+# Data, backups and archives
+*.dump
+*.sql.gz
+*.tar.gz
+*.zip
+*.bak
+*.backup
+*.sqlite
+*.sqlite3
+history.json
+__pycache__/
+.pytest_cache/
+
+# Editors
+.DS_Store
+.idea/
+.vscode/

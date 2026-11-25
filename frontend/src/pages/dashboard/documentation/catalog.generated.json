@@ -1,0 +1,2189 @@
+{
+  "generatedFrom": "RemnaDrop 2.8.1 fork: commands + controllers + event constants",
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/auth/login",
+      "summary": "Login as superadmin",
+      "category": "auth",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/oauth2/authorize",
+      "summary": "Initiate OAuth2 authorization",
+      "category": "auth",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/oauth2/callback",
+      "summary": "Callback from OAuth2",
+      "category": "auth",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/passkey/authentication/options",
+      "summary": "Get the authentication options for passkey",
+      "category": "auth",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/passkey/authentication/verify",
+      "summary": "Verify the authentication for passkey",
+      "category": "auth",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/register",
+      "summary": "Register as superadmin",
+      "category": "auth",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/status",
+      "summary": "Get the status of the authentication",
+      "category": "auth",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backups",
+      "summary": "GET /api/backups",
+      "category": "backups",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/backups/runs/:id",
+      "summary": "DELETE /api/backups/runs/:id",
+      "category": "backups",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backups/targets",
+      "summary": "POST /api/backups/targets",
+      "category": "backups",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/backups/targets/:id",
+      "summary": "DELETE /api/backups/targets/:id",
+      "category": "backups",
+      "origin": "controller"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backups/targets/:id",
+      "summary": "PATCH /api/backups/targets/:id",
+      "category": "backups",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backups/targets/:id/run",
+      "summary": "POST /api/backups/targets/:id/run",
+      "category": "backups",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/bandwidth-stats/nodes",
+      "summary": "Get Nodes Usage by Range",
+      "category": "bandwidth-stats",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/bandwidth-stats/nodes/{uuid}/users",
+      "summary": "Get Node Users Usage by Node UUID",
+      "category": "bandwidth-stats",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/bandwidth-stats/nodes/{uuid}/users/legacy",
+      "summary": "Get Node User Usage by Range and Node UUID (Legacy)",
+      "category": "bandwidth-stats",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/bandwidth-stats/nodes/users",
+      "summary": "Get Nodes Users Usage by Nodes UUIDs",
+      "category": "bandwidth-stats",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/bandwidth-stats/users/{uuid}",
+      "summary": "Get User Usage by Range",
+      "category": "bandwidth-stats",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/bandwidth-stats/users/{uuid}/legacy",
+      "summary": "Get User Usage by Range (Legacy)",
+      "category": "bandwidth-stats",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/cloudflare-dns/accounts",
+      "summary": "GET /api/cloudflare-dns/accounts",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/cloudflare-dns/accounts",
+      "summary": "POST /api/cloudflare-dns/accounts",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/cloudflare-dns/accounts/:id",
+      "summary": "DELETE /api/cloudflare-dns/accounts/:id",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/cloudflare-dns/accounts/:id",
+      "summary": "PUT /api/cloudflare-dns/accounts/:id",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/cloudflare-dns/bindings",
+      "summary": "GET /api/cloudflare-dns/bindings",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/cloudflare-dns/events",
+      "summary": "GET /api/cloudflare-dns/events",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/cloudflare-dns/links",
+      "summary": "GET /api/cloudflare-dns/links",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/cloudflare-dns/links",
+      "summary": "PUT /api/cloudflare-dns/links",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/cloudflare-dns/links/:zoneId/:recordId/:hostUuid",
+      "summary": "DELETE /api/cloudflare-dns/links/:zoneId/:recordId/:hostUuid",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/cloudflare-dns/overview",
+      "summary": "GET /api/cloudflare-dns/overview",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/cloudflare-dns/records/preview",
+      "summary": "POST /api/cloudflare-dns/records/preview",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/cloudflare-dns/records/replace-ip",
+      "summary": "POST /api/cloudflare-dns/records/replace-ip",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/cloudflare-dns/replace-ip",
+      "summary": "POST /api/cloudflare-dns/replace-ip",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/cloudflare-dns/settings",
+      "summary": "DELETE /api/cloudflare-dns/settings",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/cloudflare-dns/settings",
+      "summary": "GET /api/cloudflare-dns/settings",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/cloudflare-dns/settings",
+      "summary": "PUT /api/cloudflare-dns/settings",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/cloudflare-dns/webhook/node-ip-changed",
+      "summary": "POST /api/cloudflare-dns/webhook/node-ip-changed",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/cloudflare-dns/zones",
+      "summary": "GET /api/cloudflare-dns/zones",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/cloudflare-dns/zones",
+      "summary": "PUT /api/cloudflare-dns/zones",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/cloudflare-dns/zones/:zoneId/records",
+      "summary": "GET /api/cloudflare-dns/zones/:zoneId/records",
+      "category": "cloudflare-dns",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/config-profiles",
+      "summary": "Get config profiles",
+      "category": "config-profiles",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/config-profiles",
+      "summary": "Update Core Config in specific config profile",
+      "category": "config-profiles",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/config-profiles",
+      "summary": "Create config profile",
+      "category": "config-profiles",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/config-profiles/{uuid}",
+      "summary": "Delete config profile",
+      "category": "config-profiles",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/config-profiles/{uuid}",
+      "summary": "Get config profile by uuid",
+      "category": "config-profiles",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/config-profiles/{uuid}/computed-config",
+      "summary": "Get computed config profile by uuid",
+      "category": "config-profiles",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/config-profiles/{uuid}/inbounds",
+      "summary": "Get inbounds by profile uuid",
+      "category": "config-profiles",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/config-profiles/actions/reorder",
+      "summary": "Reorder config profiles",
+      "category": "config-profiles",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/config-profiles/inbounds",
+      "summary": "Get all inbounds from all config profiles",
+      "category": "config-profiles",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dpi-checker/billing-settings",
+      "summary": "GET /api/dpi-checker/billing-settings",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dpi-checker/billing-settings",
+      "summary": "PUT /api/dpi-checker/billing-settings",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dpi-checker/checks",
+      "summary": "GET /api/dpi-checker/checks",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/dpi-checker/checks/:id",
+      "summary": "DELETE /api/dpi-checker/checks/:id",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dpi-checker/checks/:id",
+      "summary": "GET /api/dpi-checker/checks/:id",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/dpi-checker/checks/:id/start",
+      "summary": "POST /api/dpi-checker/checks/:id/start",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/dpi-checker/checks/prepare",
+      "summary": "POST /api/dpi-checker/checks/prepare",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dpi-checker/host-options",
+      "summary": "GET /api/dpi-checker/host-options",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dpi-checker/pops",
+      "summary": "GET /api/dpi-checker/pops",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dpi-checker/profile",
+      "summary": "GET /api/dpi-checker/profile",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/dpi-checker/settings",
+      "summary": "DELETE /api/dpi-checker/settings",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dpi-checker/settings",
+      "summary": "GET /api/dpi-checker/settings",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dpi-checker/settings",
+      "summary": "PUT /api/dpi-checker/settings",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/dpi-checker/settings/proxy",
+      "summary": "Configure DPI Checker API proxy",
+      "category": "dpi-checker",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/external-squads",
+      "summary": "Get all external squads",
+      "category": "external-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/external-squads",
+      "summary": "Update external squad",
+      "category": "external-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/external-squads",
+      "summary": "Create external squad",
+      "category": "external-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/external-squads/{uuid}",
+      "summary": "Delete external squad",
+      "category": "external-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/external-squads/{uuid}",
+      "summary": "Get external squad by uuid",
+      "category": "external-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/external-squads/{uuid}/bulk-actions/add-users",
+      "summary": "Add all users to external squad",
+      "category": "external-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/external-squads/{uuid}/bulk-actions/remove-users",
+      "summary": "Delete users from external squad",
+      "category": "external-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/external-squads/actions/reorder",
+      "summary": "Reorder external squads",
+      "category": "external-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hosts",
+      "summary": "Get all hosts",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/hosts",
+      "summary": "Update a host",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/hosts",
+      "summary": "Create a new host",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/hosts/{uuid}",
+      "summary": "Delete a host by UUID",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hosts/{uuid}",
+      "summary": "Get a host by UUID",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/hosts/actions/reorder",
+      "summary": "Reorder hosts",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/hosts/bulk/delete",
+      "summary": "Delete hosts by UUIDs",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/hosts/bulk/disable",
+      "summary": "Disable hosts by UUIDs",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/hosts/bulk/enable",
+      "summary": "Enable hosts by UUIDs",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/hosts/bulk/update",
+      "summary": "Update many hosts",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hosts/tags",
+      "summary": "Get all existing host tags",
+      "category": "hosts",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hwid/devices",
+      "summary": "Get all HWID devices",
+      "category": "hwid",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/hwid/devices",
+      "summary": "Create a user HWID device",
+      "category": "hwid",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hwid/devices/{userUuid}",
+      "summary": "Get user HWID devices",
+      "category": "hwid",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/hwid/devices/delete",
+      "summary": "Delete a user HWID device",
+      "category": "hwid",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/hwid/devices/delete-all",
+      "summary": "Delete all user HWID devices",
+      "category": "hwid",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hwid/devices/stats",
+      "summary": "Get HWID devices stats",
+      "category": "hwid",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hwid/devices/top-users",
+      "summary": "Get top users by HWID devices",
+      "category": "hwid",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/infra-billing/history",
+      "summary": "Get infra billing history",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/infra-billing/history",
+      "summary": "Create infra billing history",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/infra-billing/history/{uuid}",
+      "summary": "Delete infra billing history",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/infra-billing/nodes",
+      "summary": "Get infra billing nodes",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/infra-billing/nodes",
+      "summary": "Update infra billing nodes",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/infra-billing/nodes",
+      "summary": "Create infra billing node",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/infra-billing/nodes/{uuid}",
+      "summary": "Delete infra billing node",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/infra-billing/providers",
+      "summary": "Get all infra providers",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/infra-billing/providers",
+      "summary": "Update infra provider",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/infra-billing/providers",
+      "summary": "Create infra provider",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/infra-billing/providers/{uuid}",
+      "summary": "Delete infra provider by uuid",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/infra-billing/providers/{uuid}",
+      "summary": "Get infra provider by uuid",
+      "category": "infra-billing",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/internal-squads",
+      "summary": "Get all internal squads",
+      "category": "internal-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/internal-squads",
+      "summary": "Update internal squad",
+      "category": "internal-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/internal-squads",
+      "summary": "Create internal squad",
+      "category": "internal-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/internal-squads/{uuid}",
+      "summary": "Delete internal squad",
+      "category": "internal-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/internal-squads/{uuid}",
+      "summary": "Get internal squad by uuid",
+      "category": "internal-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/internal-squads/{uuid}/accessible-nodes",
+      "summary": "Get internal squad accessible nodes",
+      "category": "internal-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/internal-squads/{uuid}/bulk-actions/add-users",
+      "summary": "Add all users to internal squad",
+      "category": "internal-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/internal-squads/{uuid}/bulk-actions/remove-users",
+      "summary": "Delete users from internal squad",
+      "category": "internal-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/internal-squads/actions/reorder",
+      "summary": "Reorder internal squads",
+      "category": "internal-squads",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ip-control/drop-connections",
+      "summary": "Drop Connections for Users or IPs",
+      "category": "ip-control",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ip-control/fetch-ips/{uuid}",
+      "summary": "Request IP List for User",
+      "category": "ip-control",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ip-control/fetch-ips/result/{jobId}",
+      "summary": "Get IP List Result by Job ID",
+      "category": "ip-control",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ip-control/fetch-users-ips/{nodeUuid}",
+      "summary": "Request Users IPs List for Node",
+      "category": "ip-control",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ip-control/fetch-users-ips/result/{jobId}",
+      "summary": "Get Users IPs List Result by Job ID",
+      "category": "ip-control",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/keygen",
+      "summary": "Get SECRET_KEY for Remnawave Node",
+      "category": "keygen",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter-bridge/api/bandwidth-stats/nodes/usage",
+      "summary": "POST /api/limiter-bridge/api/bandwidth-stats/nodes/usage",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter-bridge/api/connections/by-node/:jobId",
+      "summary": "GET /api/limiter-bridge/api/connections/by-node/:jobId",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter-bridge/api/connections/by-node/:nodeUuid",
+      "summary": "POST /api/limiter-bridge/api/connections/by-node/:nodeUuid",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter-bridge/api/connections/drop",
+      "summary": "POST /api/limiter-bridge/api/connections/drop",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter-bridge/api/hwid/devices",
+      "summary": "GET /api/limiter-bridge/api/hwid/devices",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter-bridge/api/hwid/devices/:userId",
+      "summary": "GET /api/limiter-bridge/api/hwid/devices/:userId",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter-bridge/api/nodes",
+      "summary": "GET /api/limiter-bridge/api/nodes",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter-bridge/api/users/:userId",
+      "summary": "GET /api/limiter-bridge/api/users/:userId",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter-bridge/api/users/:userId/actions/disable",
+      "summary": "POST /api/limiter-bridge/api/users/:userId/actions/disable",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter-bridge/api/users/:userId/actions/enable",
+      "summary": "POST /api/limiter-bridge/api/users/:userId/actions/enable",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter-bridge/api/users/:userId/subscription-request-history",
+      "summary": "GET /api/limiter-bridge/api/users/:userId/subscription-request-history",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter-bridge/heartbeat",
+      "summary": "POST /api/limiter-bridge/heartbeat",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter-bridge/runtime",
+      "summary": "GET /api/limiter-bridge/runtime",
+      "category": "limiter-bridge",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter-webhook",
+      "summary": "POST /api/limiter-webhook",
+      "category": "limiter-webhook",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter/actions",
+      "summary": "GET /api/limiter/actions",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/limiter/credentials",
+      "summary": "DELETE /api/limiter/credentials",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter/credentials",
+      "summary": "GET /api/limiter/credentials",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/limiter/credentials",
+      "summary": "PUT /api/limiter/credentials",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter/events",
+      "summary": "GET /api/limiter/events",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter/ignore/:uuid",
+      "summary": "POST /api/limiter/ignore/:uuid",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter/ignored",
+      "summary": "GET /api/limiter/ignored",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter/outbound-webhook/status",
+      "summary": "GET /api/limiter/outbound-webhook/status",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter/settings",
+      "summary": "GET /api/limiter/settings",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/limiter/settings",
+      "summary": "PUT /api/limiter/settings",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter/settings/reset",
+      "summary": "POST /api/limiter/settings/reset",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter/settings/runtime",
+      "summary": "GET /api/limiter/settings/runtime",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter/status",
+      "summary": "GET /api/limiter/status",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/limiter/summary",
+      "summary": "GET /api/limiter/summary",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter/unignore/:uuid",
+      "summary": "POST /api/limiter/unignore/:uuid",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/limiter/users/:uuid/actions",
+      "summary": "POST /api/limiter/users/:uuid/actions",
+      "category": "limiter",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/metadata/node/{uuid}",
+      "summary": "Get node metadata",
+      "category": "metadata",
+      "origin": "contract"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/metadata/node/{uuid}",
+      "summary": "Update or create Node Metadata",
+      "category": "metadata",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/metadata/user/{uuid}",
+      "summary": "Get user metadata",
+      "category": "metadata",
+      "origin": "contract"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/metadata/user/{uuid}",
+      "summary": "Update or create User Metadata",
+      "category": "metadata",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/monitoring/alerts",
+      "summary": "GET /api/monitoring/alerts",
+      "category": "monitoring",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/monitoring/retention",
+      "summary": "GET /api/monitoring/retention",
+      "category": "monitoring",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/monitoring/retention",
+      "summary": "PUT /api/monitoring/retention",
+      "category": "monitoring",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/monitoring/settings",
+      "summary": "GET /api/monitoring/settings",
+      "category": "monitoring",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/monitoring/settings/:scope",
+      "summary": "DELETE /api/monitoring/settings/:scope",
+      "category": "monitoring",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/monitoring/settings/:scope",
+      "summary": "PUT /api/monitoring/settings/:scope",
+      "category": "monitoring",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/node-automations",
+      "summary": "GET /api/node-automations",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/node-automations",
+      "summary": "POST /api/node-automations",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/node-automations/:id",
+      "summary": "DELETE /api/node-automations/:id",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/node-automations/:id",
+      "summary": "PUT /api/node-automations/:id",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/node-automations/:id/duplicate",
+      "summary": "POST /api/node-automations/:id/duplicate",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/node-automations/:id/enabled",
+      "summary": "PUT /api/node-automations/:id/enabled",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/node-automations/:id/preview",
+      "summary": "POST /api/node-automations/:id/preview",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/node-automations/:id/run",
+      "summary": "POST /api/node-automations/:id/run",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/node-automations/executions",
+      "summary": "GET /api/node-automations/executions",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/node-automations/options",
+      "summary": "GET /api/node-automations/options",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/node-automations/preview",
+      "summary": "POST /api/node-automations/preview",
+      "category": "node-automations",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/node-plugins",
+      "summary": "Get all Node Plugins",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/node-plugins",
+      "summary": "Update Node Plugin",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/node-plugins",
+      "summary": "Create Node Plugin",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/node-plugins/{uuid}",
+      "summary": "Delete Node Plugin",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/node-plugins/{uuid}",
+      "summary": "Get Node Plugin by uuid",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/node-plugins/actions/clone",
+      "summary": "Clone Node Plugin",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/node-plugins/actions/reorder",
+      "summary": "Reorder Node Plugins",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/node-plugins/executor",
+      "summary": "Execute command on node plugins",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/node-plugins/torrent-blocker",
+      "summary": "Get Torrent Blocker Reports",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/node-plugins/torrent-blocker/stats",
+      "summary": "Get Torrent Blocker Reports Stats",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/node-plugins/torrent-blocker/truncate",
+      "summary": "Truncate Torrent Blocker Reports",
+      "category": "node-plugins",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/node-quotas/global-settings",
+      "summary": "GET /api/node-quotas/global-settings",
+      "category": "node-quotas",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/node-quotas/global-settings",
+      "summary": "PUT /api/node-quotas/global-settings",
+      "category": "node-quotas",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/nodes",
+      "summary": "Get all nodes",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/nodes",
+      "summary": "Update node",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes",
+      "summary": "Create a new node",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/nodes/:uuid/ip-pool",
+      "summary": "GET /api/nodes/:uuid/ip-pool",
+      "category": "nodes",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/:uuid/ip-pool",
+      "summary": "POST /api/nodes/:uuid/ip-pool",
+      "category": "nodes",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/nodes/:uuid/ip-pool/:id",
+      "summary": "DELETE /api/nodes/:uuid/ip-pool/:id",
+      "category": "nodes",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/:uuid/ip-pool/:id/rotate",
+      "summary": "POST /api/nodes/:uuid/ip-pool/:id/rotate",
+      "category": "nodes",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/:uuid/ip-pool/probe",
+      "summary": "POST /api/nodes/:uuid/ip-pool/probe",
+      "category": "nodes",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/:uuid/metrics-agent",
+      "summary": "POST /api/nodes/:uuid/metrics-agent",
+      "category": "nodes",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/nodes/:uuid/metrics-agent/token",
+      "summary": "GET /api/nodes/:uuid/metrics-agent/token",
+      "category": "nodes",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/nodes/{uuid}",
+      "summary": "Delete a node",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/nodes/{uuid}",
+      "summary": "Get node by UUID",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/{uuid}/actions/disable",
+      "summary": "Disable a node",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/{uuid}/actions/enable",
+      "summary": "Enable a node",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/{uuid}/actions/reset-traffic",
+      "summary": "Reset Node Traffic",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/{uuid}/actions/restart",
+      "summary": "Restart node",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/actions/reorder",
+      "summary": "Reorder nodes",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/actions/restart-all",
+      "summary": "Restart all nodes",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/bulk-actions",
+      "summary": "Perform actions for many nodes",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/bulk-actions/profile-modification",
+      "summary": "Modify Inbounds & Profile for many nodes",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/nodes/bulk-actions/update",
+      "summary": "Update many nodes",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/nodes/metrics/history",
+      "summary": "GET /api/nodes/metrics/history",
+      "category": "nodes",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/nodes/tags",
+      "summary": "Get all existing nodes tags",
+      "category": "nodes",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/panel-events",
+      "summary": "GET /api/panel-events",
+      "category": "panel-events",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/panel-events/preferences",
+      "summary": "GET /api/panel-events/preferences",
+      "category": "panel-events",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/panel-events/preferences",
+      "summary": "PUT /api/panel-events/preferences",
+      "category": "panel-events",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/panel-events/read",
+      "summary": "POST /api/panel-events/read",
+      "category": "panel-events",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/panel-updates",
+      "summary": "Check installed and latest RemnaDrop commit and update status",
+      "category": "panel-updates",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/panel-updates",
+      "summary": "Queue a backup-aware panel update on the host",
+      "category": "panel-updates",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/passkeys",
+      "summary": "Delete a passkey by ID",
+      "category": "passkeys",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/passkeys",
+      "summary": "Get all passkeys",
+      "category": "passkeys",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/passkeys",
+      "summary": "Update passkey",
+      "category": "passkeys",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/passkeys/registration/options",
+      "summary": "Get registration options for passkey",
+      "category": "passkeys",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/passkeys/registration/verify",
+      "summary": "Verify registration for passkey",
+      "category": "passkeys",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/remnadrop/disk-metrics",
+      "summary": "GET /api/remnadrop/disk-metrics",
+      "category": "remnadrop",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/remnawave-settings",
+      "summary": "Get Remnawave settings",
+      "category": "remnawave-settings",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/remnawave-settings",
+      "summary": "Update Remnawave settings",
+      "category": "remnawave-settings",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/snippets",
+      "summary": "Delete snippet",
+      "category": "snippets",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/snippets",
+      "summary": "Get snippets",
+      "category": "snippets",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/snippets",
+      "summary": "Update snippet",
+      "category": "snippets",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/snippets",
+      "summary": "Create snippet",
+      "category": "snippets",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ssl-certificates",
+      "summary": "GET /api/ssl-certificates",
+      "category": "ssl-certificates",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ssl-certificates",
+      "summary": "POST /api/ssl-certificates",
+      "category": "ssl-certificates",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/ssl-certificates/:id",
+      "summary": "DELETE /api/ssl-certificates/:id",
+      "category": "ssl-certificates",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ssl-certificates/:id",
+      "summary": "PUT /api/ssl-certificates/:id",
+      "category": "ssl-certificates",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sub/{shortUuid}/info",
+      "summary": "Get Subscription Info by Short UUID",
+      "category": "subscription",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscription-page-configs",
+      "summary": "Get all subscription page configs",
+      "category": "subscription-page-configs",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/subscription-page-configs",
+      "summary": "Update subscription page config",
+      "category": "subscription-page-configs",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/subscription-page-configs",
+      "summary": "Create subscription page config",
+      "category": "subscription-page-configs",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/subscription-page-configs/{uuid}",
+      "summary": "Delete subscription page config",
+      "category": "subscription-page-configs",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscription-page-configs/{uuid}",
+      "summary": "Get subscription page config by uuid",
+      "category": "subscription-page-configs",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/subscription-page-configs/actions/clone",
+      "summary": "Clone subscription page config",
+      "category": "subscription-page-configs",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/subscription-page-configs/actions/reorder",
+      "summary": "Reorder subscription page configs",
+      "category": "subscription-page-configs",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscription-request-history",
+      "summary": "Get all subscription request history",
+      "category": "subscription-request-history",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscription-request-history/stats",
+      "summary": "Get subscription request history stats",
+      "category": "subscription-request-history",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscription-settings",
+      "summary": "Get subscription settings",
+      "category": "subscription-settings",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/subscription-settings",
+      "summary": "Update subscription settings",
+      "category": "subscription-settings",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscription-templates",
+      "summary": "Get all subscription templates (wihout content)",
+      "category": "subscription-template",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/subscription-templates",
+      "summary": "Update subscription template",
+      "category": "subscription-template",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/subscription-templates",
+      "summary": "Create subscription template",
+      "category": "subscription-template",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/subscription-templates/{uuid}",
+      "summary": "Delete subscription template",
+      "category": "subscription-template",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscription-templates/{uuid}",
+      "summary": "Get subscription template by uuid",
+      "category": "subscription-template",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/subscription-templates/actions/reorder",
+      "summary": "Reorder subscription templates",
+      "category": "subscription-template",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscriptions",
+      "summary": "Get all subscriptions",
+      "category": "subscriptions",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscriptions/by-short-uuid/{shortUuid}",
+      "summary": "Get subscription by short uuid (protected route)",
+      "category": "subscriptions",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscriptions/by-short-uuid/{shortUuid}/raw",
+      "summary": "Get Raw Subscription by Short UUID",
+      "category": "subscriptions",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscriptions/by-username/{username}",
+      "summary": "Get subscription by username",
+      "category": "subscriptions",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscriptions/by-uuid/{uuid}",
+      "summary": "Get subscription by uuid",
+      "category": "subscriptions",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscriptions/connection-keys/{uuid}",
+      "summary": "Get connection keys (base64 format) by uuid",
+      "category": "subscriptions",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/subscriptions/subpage-config/{shortUuid}",
+      "summary": "Get Subpage Config by Short UUID",
+      "category": "subscriptions",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/health",
+      "summary": "Get Remnawave Health",
+      "category": "system",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/metadata",
+      "summary": "Get Remnawave Information",
+      "category": "system",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/nodes/metrics",
+      "summary": "Get Nodes Metrics",
+      "category": "system",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/stats",
+      "summary": "Get Stats",
+      "category": "system",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/stats/bandwidth",
+      "summary": "Get Bandwidth Stats",
+      "category": "system",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/stats/nodes",
+      "summary": "Get Nodes Statistics",
+      "category": "system",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/stats/recap",
+      "summary": "Get Recap",
+      "category": "system",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/system/testers/srr-matcher",
+      "summary": "Test SRR Matcher",
+      "category": "system",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/tools/x25519/generate",
+      "summary": "Generate 30 X25519 keypairs",
+      "category": "system",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tokens",
+      "summary": "Get all API tokens",
+      "category": "api-tokens",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tokens",
+      "summary": "Create a new API token",
+      "category": "api-tokens",
+      "origin": "contract"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tokens/{uuid}",
+      "summary": "Delete an API token by UUID",
+      "category": "api-tokens",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tokens/scopes",
+      "summary": "Get available API token scopes",
+      "category": "api-tokens",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users",
+      "summary": "Get all users using offset-based pagination",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/users",
+      "summary": "Update a user by UUID or username",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users",
+      "summary": "Create a new user",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/:userUuid/node-quotas",
+      "summary": "GET /api/users/:userUuid/node-quotas",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/:userUuid/node-quotas/groups",
+      "summary": "Получить общие лимиты нод пользователя",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/:userUuid/node-quotas/groups",
+      "summary": "Создать группу: name, nodeUuids (1–20), limitBytes; групп может быть несколько",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/users/:userUuid/node-quotas/groups/:groupUuid",
+      "summary": "Изменить состав нод и лимит группы, от одной до 20 нод",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/users/:userUuid/node-quotas/groups/:groupUuid",
+      "summary": "Удалить общий лимит, сохранив расход каждой ноды",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/:userUuid/node-quotas/groups/:groupUuid/reset",
+      "summary": "Сбросить расход всех нод группы",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/users/:userUuid/node-quotas/:nodeUuid",
+      "summary": "Совместимость: удалить однонодовую группу лимита",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/users/:userUuid/node-quotas/:nodeUuid",
+      "summary": "Совместимость: создать или изменить однонодовую группу лимита",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/:userUuid/node-quotas/:nodeUuid/reset",
+      "summary": "Совместимость: сбросить однонодовую группу лимита",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/:userUuid/node-quotas/reset-all",
+      "summary": "POST /api/users/:userUuid/node-quotas/reset-all",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/:userUuid/node-quotas/settings",
+      "summary": "GET /api/users/:userUuid/node-quotas/settings",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/users/:userUuid/node-quotas/settings",
+      "summary": "PUT /api/users/:userUuid/node-quotas/settings",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/:userUuid/node-quotas/status",
+      "summary": "GET /api/users/:userUuid/node-quotas/status",
+      "category": "users",
+      "origin": "controller"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/users/{uuid}",
+      "summary": "Delete user",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/{uuid}",
+      "summary": "Get user by UUID",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/{uuid}/accessible-nodes",
+      "summary": "Get user accessible nodes",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/{uuid}/actions/disable",
+      "summary": "Disable user",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/{uuid}/actions/enable",
+      "summary": "Enable user",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/{uuid}/actions/reset-traffic",
+      "summary": "Reset user traffic",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/{uuid}/actions/revoke",
+      "summary": "Revoke user subscription",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/{uuid}/subscription-request-history",
+      "summary": "Get user subscription request history, recent 24 records",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/all/extend-expiration-date",
+      "summary": "Extend expiration date for all users by days",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/all/reset-traffic",
+      "summary": "Reset user used traffic for all users",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/all/update",
+      "summary": "Bulk update all users",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/delete",
+      "summary": "Bulk delete users by UUIDs",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/delete-by-status",
+      "summary": "Bulk delete users by status",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/extend-expiration-date",
+      "summary": "Extend expiration date for specified users by days",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/reset-traffic",
+      "summary": "Bulk reset traffic users by UUIDs",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/revoke-subscription",
+      "summary": "Revoke users subscription by User UUIDs",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/update",
+      "summary": "Bulk update users by UUIDs",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/bulk/update-squads",
+      "summary": "Bulk update users internal squads by UUIDs",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/by-email/{email}",
+      "summary": "Get users by email",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/by-id/{id}",
+      "summary": "Get user by ID",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/by-short-uuid/{shortUuid}",
+      "summary": "Get user by Short UUID",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/by-tag/{tag}",
+      "summary": "Get users by tag",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/by-telegram-id/{telegramId}",
+      "summary": "Get users by telegram ID",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/by-username/{username}",
+      "summary": "Get user by username",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/resolve",
+      "summary": "Resolve a user",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/stream",
+      "summary": "Get all users using cursor-based (keyset) pagination",
+      "category": "users",
+      "origin": "contract"
+    },
+    {
+      "method": "GET",
+      "path": "/api/users/tags",
+      "summary": "Get all existing user tags",
+      "category": "users",
+      "origin": "contract"
+    }
+  ],
+  "webhooks": [
+    "cloudflare_dns.ip_updated",
+    "crm.infra_billing_node_payment_due_today",
+    "crm.infra_billing_node_payment_in_24hrs",
+    "crm.infra_billing_node_payment_in_48hrs",
+    "crm.infra_billing_node_payment_in_7_days",
+    "crm.infra_billing_node_payment_overdue_24hrs",
+    "crm.infra_billing_node_payment_overdue_48hrs",
+    "crm.infra_billing_node_payment_overdue_7_days",
+    "errors.bandwidth_usage_threshold_reached_max_notifications",
+    "node.connection_lost",
+    "node.connection_restored",
+    "node.created",
+    "node.deleted",
+    "node.disabled",
+    "node.enabled",
+    "node.modified",
+    "node.traffic_notify",
+    "node_automation.triggered",
+    "node_metric.recovered",
+    "node_metric.threshold",
+    "node_quota.exhausted",
+    "node_quota.reset",
+    "node_quota.threshold",
+    "service.api_token_created",
+    "service.api_token_deleted",
+    "service.login_attempt_failed",
+    "service.login_attempt_success",
+    "service.panel_started",
+    "service.subpage_config_changed",
+    "ssl.expired",
+    "ssl.expiring",
+    "torrent_blocker.report",
+    "user.bandwidth_usage_threshold_reached",
+    "user.created",
+    "user.deleted",
+    "user.disabled",
+    "user.enabled",
+    "user.expiration",
+    "user.expired",
+    "user.first_connected",
+    "user.limited",
+    "user.modified",
+    "user.not_connected",
+    "user.revoked",
+    "user.traffic_reset",
+    "user_hwid_devices.added",
+    "user_hwid_devices.deleted"
+  ]
+}
