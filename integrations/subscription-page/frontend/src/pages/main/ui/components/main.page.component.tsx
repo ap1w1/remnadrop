@@ -1,4 +1,4 @@
-import { Box, Center, Container, Group, Image, Stack, Title } from '@mantine/core'
+import { Box, Container, Group, Image, Stack, Title } from '@mantine/core'
 import { TSubscriptionPagePlatformKey } from '@remnawave/subscription-page-types'
 
 import {
@@ -7,9 +7,6 @@ import {
     InstallationGuideConnector,
     MinimalBlockRenderer,
     RawKeysWidget,
-    SubscriptionInfoCardsWidget,
-    SubscriptionInfoCollapsedWidget,
-    SubscriptionInfoExpandedWidget,
     SubscriptionLinkWidget,
     TimelineBlockRenderer
 } from '@widgets/main'
@@ -17,6 +14,7 @@ import { useAppConfig, useAppConfigStoreActions, useCurrentLang } from '@entitie
 import { LanguagePicker } from '@shared/ui/language-picker/language-picker.shared'
 import { Page, RemnawaveLogo } from '@shared/ui'
 import { RemnadropExtrasWidget } from '@widgets/main/remnadrop-extras/remnadrop-extras.widget'
+import { RemnadropOverviewWidget } from '@widgets/main/remnadrop-overview/remnadrop-overview.widget'
 import { parsePageColors } from '@shared/utils/page-colors'
 
 interface IMainPageComponentProps {
@@ -29,13 +27,6 @@ const BLOCK_RENDERERS = {
     timeline: TimelineBlockRenderer,
     accordion: AccordionBlockRenderer,
     minimal: MinimalBlockRenderer
-} as const
-
-const SUBSCRIPTION_INFO_BLOCK_RENDERERS = {
-    cards: SubscriptionInfoCardsWidget,
-    collapsed: SubscriptionInfoCollapsedWidget,
-    expanded: SubscriptionInfoExpandedWidget,
-    hidden: null
 } as const
 
 export const MainPageComponent = ({ isMobile, platform }: IMainPageComponentProps) => {
@@ -65,13 +56,10 @@ export const MainPageComponent = ({ isMobile, platform }: IMainPageComponentProp
 
     const atLeastOnePlatformApp = Object.values(hasPlatformApps).some((value) => value)
 
-    const SubscriptionInfoBlockRenderer =
-        SUBSCRIPTION_INFO_BLOCK_RENDERERS[config.uiConfig.subscriptionInfoBlockType]
-
     return (
         <Page>
             <Box className="header-wrapper" py="md">
-                <Container maw={1200} px={{ base: 'md', sm: 'lg', md: 'xl' }}>
+                <Container maw={1160} px={{ base: 'md', sm: 'lg', md: 'xl' }}>
                     <Group justify="space-between">
                         <Group gap="sm" style={{ userSelect: 'none' }} wrap="nowrap">
                             {hasCustomLogo ? (
@@ -98,23 +86,30 @@ export const MainPageComponent = ({ isMobile, platform }: IMainPageComponentProp
                             </Title>
                         </Group>
 
-                        <SubscriptionLinkWidget
-                            hideGetLink={config.baseSettings.hideGetLinkButton}
-                            supportUrl=""
-                        />
+                        <Group gap="sm" wrap="nowrap">
+                            {config.uiConfig.subscriptionInfoBlockType === 'hidden' && <SubscriptionLinkWidget hideGetLink={config.baseSettings.hideGetLinkButton} mode="icon" />}
+                            <LanguagePicker
+                                currentLang={currentLang}
+                                locales={config.locales}
+                                onLanguageChange={setLanguage}
+                            />
+                        </Group>
                     </Group>
                 </Container>
             </Box>
 
             <Container
-                maw={1200}
+                maw={1160}
                 px={{ base: 'md', sm: 'lg', md: 'xl' }}
                 py="xl"
                 style={{ position: 'relative', zIndex: 1 }}
             >
                 <Stack gap="xl">
-                    {SubscriptionInfoBlockRenderer && (
-                        <SubscriptionInfoBlockRenderer isMobile={isMobile} />
+                    {config.uiConfig.subscriptionInfoBlockType !== 'hidden' && (
+                        <RemnadropOverviewWidget
+                            variant={config.uiConfig.subscriptionInfoBlockType}
+                            hideGetLink={config.baseSettings.hideGetLinkButton}
+                        />
                     )}
 
                     <RemnadropExtrasWidget />
@@ -132,13 +127,6 @@ export const MainPageComponent = ({ isMobile, platform }: IMainPageComponentProp
 
                     <RawKeysWidget isMobile={isMobile} />
 
-                    <Center>
-                        <LanguagePicker
-                            currentLang={currentLang}
-                            locales={config.locales}
-                            onLanguageChange={setLanguage}
-                        />
-                    </Center>
                 </Stack>
             </Container>
         </Page>

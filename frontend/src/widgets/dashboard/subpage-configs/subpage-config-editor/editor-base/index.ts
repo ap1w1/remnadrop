@@ -1,6 +1,7 @@
 export * from './base-settings-block.component'
 export * from './base-translations-block.component'
 export * from './branding-block.component'
+export * from './page-colors-block.component'
 export * from './localization-block.component'
 export * from './platform-block.component'
 export * from './svg-library-block.component'

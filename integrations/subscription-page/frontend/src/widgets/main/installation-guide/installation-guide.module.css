@@ -1,7 +1,7 @@
 .appsGrid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 10px;
     margin-bottom: var(--mantine-spacing-md);
 }
 
@@ -9,22 +9,20 @@
     position: relative;
     display: flex;
     align-items: center;
-    flex: 1 1 auto;
-    padding: 0 48px 0 16px;
-    height: 48px;
+    padding: 0 48px 0 18px;
+    min-height: 58px;
     min-width: 0;
     overflow: hidden;
-    background: rgba(255, 255, 255, 0.02);
+    background: color-mix(in srgb, var(--page-background, #0d1117) 70%, var(--page-surface, #161b22));
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-left: 3px solid rgba(255, 255, 255, 0.08);
-    border-radius: var(--mantine-radius-md);
+    border-radius: 14px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .appButton:hover {
     background: rgba(255, 255, 255, 0.05);
-    border-left-color: rgba(255, 255, 255, 0.25);
+    border-color: color-mix(in srgb, var(--page-accent, #22c7d9) 35%, transparent);
 }
 
 .appButton:hover .bgIcon {
@@ -33,16 +31,13 @@
 
 .appButtonActive,
 .appButtonActive:hover {
-    background: linear-gradient(90deg, rgba(34, 211, 238, 0.12) 0%, rgba(34, 211, 238, 0.04) 100%);
-    border-color: rgba(34, 211, 238, 0.2);
-    border-left-color: var(--mantine-color-cyan-5);
-    box-shadow:
-        inset 4px 0 12px -4px rgba(34, 211, 238, 0.3),
-        0 0 12px rgba(34, 211, 238, 0.1);
+    background: color-mix(in srgb, var(--page-accent, #22c7d9) 13%, var(--page-surface, #161b22));
+    border-color: var(--page-accent, #22c7d9);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--page-accent, #22c7d9) 20%, transparent);
 }
 
 .appButtonActive .appName {
-    color: var(--mantine-color-cyan-3);
+    color: var(--page-accent, #22c7d9);
 }
 
 .appButtonActive .bgIcon,

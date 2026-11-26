@@ -11,6 +11,40 @@
     border-color: var(--mantine-primary-color-light-color);
 }
 
+.themeSwatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+
+.themePreview {
+    min-height: 220px;
+    padding: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+}
+
+.themePreviewCard {
+    margin-top: 12px;
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+}
+
+.themePreviewTrack {
+    height: 8px;
+    margin-top: 18px;
+    overflow: hidden;
+    border-radius: 99px;
+}
+
+.themePreviewTrack span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+}
+
 .interactiveCard {
     cursor: pointer;
     min-width: 0;

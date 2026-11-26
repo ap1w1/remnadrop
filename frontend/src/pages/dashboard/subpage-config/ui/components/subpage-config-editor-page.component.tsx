@@ -21,6 +21,7 @@ import {
     BaseSettingsBlockComponent,
     BaseTranslationsBlockComponent,
     BrandingBlockComponent,
+    PageColorsBlockComponent,
     LocalizationBlockComponent,
     PlatformBlockComponent,
     SvgLibraryBlockComponent,
@@ -377,6 +378,7 @@ export const SubpageConfigEditorPageComponent = (props: Props) => {
             />
 
             <Stack gap="lg">
+                <PageColorsBlockComponent form={form} />
                 <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
                     <BrandingBlockComponent form={form} />
                     <LocalizationBlockComponent form={form} />

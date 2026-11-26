@@ -2,13 +2,13 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: 62px;
-    padding: 10px;
+    min-height: 72px;
+    padding: 14px;
     color: var(--page-text, #e6edf3);
     text-decoration: none;
     background: var(--page-surface, #161b22);
     border: 1px solid color-mix(in srgb, var(--page-accent, #22c7d9) 20%, transparent);
-    border-radius: 14px;
+    border-radius: 16px;
     transition: border-color .15s ease, transform .15s ease;
 }
 
@@ -21,14 +21,22 @@
     color: var(--page-accent, #22c7d9);
 }
 
+.sectionTitle { padding-left: 2px; }
+
 .external {
     margin-left: auto;
     opacity: .55;
 }
 
 .quota {
-    padding: 16px;
+    padding: 20px;
     background: var(--page-surface, #161b22);
     border: 1px solid color-mix(in srgb, var(--page-accent, #22c7d9) 18%, transparent);
-    border-radius: 14px;
+    border-radius: 18px;
 }
+
+.quotaName { overflow-wrap: anywhere; }
+.quotaAmount strong { font-size: 21px; color: var(--page-text, #e6edf3); }
+.quotaAmount span { opacity: .58; }
+.nodeChips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 18px; }
+.nodeChip { padding: 5px 8px; border: 1px solid rgba(255,255,255,.09); border-radius: 8px; background: rgba(255,255,255,.04); font-size: 11px; opacity: .76; }

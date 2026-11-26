@@ -1,4 +1,4 @@
-import { IconBrandTelegram, IconExternalLink, IconHeadset, IconInfoCircle, IconServer, IconWorld } from '@tabler/icons-react'
+import { IconBrandTelegram, IconExternalLink, IconHeadset, IconInfoCircle, IconLink, IconServer, IconWorld } from '@tabler/icons-react'
 import { Badge, Box, Group, Progress, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
 
 import { useSubscription } from '@entities/subscription-info-store'
@@ -24,17 +24,17 @@ const translations = {
     fa: { support: 'پشتیبانی', channel: 'کانال تلگرام', bot: 'ربات تلگرام', site: 'وب‌سایت', info: 'اطلاعات', quotas: 'محدودیت گره‌ها', exhausted: 'سقف مصرف', links: 'پیوندهای مفید' }
 } as const
 
-function formatBytes(raw: string): string {
+function formatBytes(raw: string, locale: string): string {
     const value = Number(raw)
     if (!Number.isFinite(value)) return '—'
-    const units = ['Б', 'КиБ', 'МиБ', 'ГиБ', 'ТиБ', 'ПиБ']
+    const units = locale === 'ru' ? ['Б', 'КиБ', 'МиБ', 'ГиБ', 'ТиБ', 'ПиБ'] : ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']
     let scaled = Math.max(0, value)
     let index = 0
     while (scaled >= 1024 && index < units.length - 1) {
         scaled /= 1024
         index++
     }
-    return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: index === 0 ? 0 : 2 }).format(scaled)} ${units[index]}`
+    return `${new Intl.NumberFormat(locale, { maximumFractionDigits: index === 0 ? 0 : 2 }).format(scaled)} ${units[index]}`
 }
 
 function flag(countryCode: string): string {
@@ -74,7 +74,11 @@ export function RemnadropExtrasWidget() {
 
     return <Stack gap="lg">
         {availableLinks.length > 0 && <section aria-label={labels.links}>
-            <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="sm">
+            <Group gap="xs" mb="sm" className={classes.sectionTitle}>
+                <IconLink size={20} className={classes.headingIcon} />
+                <Title order={2} size="h4">{labels.links}</Title>
+            </Group>
+            <SimpleGrid cols={{ base: 1, xs: 2, md: 3 }} spacing="sm">
                 {availableLinks.map(({ key, label, Icon, href }) => <Box
                     component="a"
                     href={href}
@@ -90,9 +94,9 @@ export function RemnadropExtrasWidget() {
             </SimpleGrid>
         </section>}
         {groups.length > 0 && <section aria-label={labels.quotas}>
-            <Group gap="xs" mb="sm">
+            <Group gap="xs" mb="sm" className={classes.sectionTitle}>
                 <IconServer size={19} className={classes.headingIcon} />
-                <Title order={3} size="h4">{labels.quotas}</Title>
+                <Title order={2} size="h4">{labels.quotas}</Title>
             </Group>
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
                 {groups.map(group => {
@@ -101,16 +105,16 @@ export function RemnadropExtrasWidget() {
                     const percent = limit > 0 ? Math.min(100, Math.max(0, used / limit * 100)) : 0
                     return <Box className={classes.quota} key={group.name}>
                         <Group justify="space-between" align="start" gap="xs">
-                            <Text fw={700}>{group.name}</Text>
-                            {group.blocked && <Badge color="red" size="sm">{labels.exhausted}</Badge>}
+                            <Text fw={700} className={classes.quotaName}>{group.name}</Text>
+                            {group.blocked ? <Badge color="red" size="sm">{labels.exhausted}</Badge> : limit > 0 && <Badge color="cyan" variant="light" size="sm">{Math.round(percent)}%</Badge>}
                         </Group>
-                        <Text size="sm" c="dimmed" mt={4}>
-                            {formatBytes(group.usedBytes)} / {limit > 0 ? formatBytes(group.limitBytes) : '∞'}
+                        <Text size="sm" mt="xs" className={classes.quotaAmount}>
+                            <strong>{formatBytes(group.usedBytes, currentLang)}</strong><span> / {limit > 0 ? formatBytes(group.limitBytes, currentLang) : '∞'}</span>
                         </Text>
-                        {limit > 0 && <Progress value={percent} color={group.blocked ? 'red' : 'cyan'} mt="sm" size="sm" />}
-                        {group.nodes.length > 0 && <Text size="xs" c="dimmed" mt="sm">
-                            {group.nodes.map(node => `${flag(node.countryCode)} ${node.name}`).join(' · ')}
-                        </Text>}
+                        {limit > 0 && <Progress value={percent} color={group.blocked ? 'red' : 'cyan'} mt="md" size="sm" radius="xl" />}
+                        {group.nodes.length > 0 && <div className={classes.nodeChips}>
+                            {group.nodes.map(node => <span className={classes.nodeChip} key={node.name}>{flag(node.countryCode)} {node.name}</span>)}
+                        </div>}
                     </Box>
                 })}
             </SimpleGrid>
