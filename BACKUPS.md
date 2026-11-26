@@ -51,14 +51,9 @@ sudo bash backup-agent/install-agent.sh
 
 ## Вебхук
 
-У каждого хранилища переключатель «Отправлять вебхук». Адрес и HMAC-секрет задаются системным администратором в `/etc/remnadrop-backups/agent.env` и применяются после следующего запуска задачи:
+У каждого хранилища есть переключатель «Отправлять вебхук». Агент записывает результат копирования в базу, а панель отправляет события `backup.completed` и `backup.failed` через общие настройки и очередь исходящих вебхуков Remnawave. Отдельные `BACKUP_WEBHOOK_URL` и `BACKUP_WEBHOOK_SECRET` больше не нужны. Уже сохранённые копии при обновлении не отправляются повторно.
 
-```text
-BACKUP_WEBHOOK_URL=https://example.org/hooks/backups
-BACKUP_WEBHOOK_SECRET=long-random-secret
-```
-
-События: `backup.completed` и `backup.failed`; JSON содержит `targetId`, `runId`, `storageType`, `name`, `fileName`, `sizeBytes`, `sha256`, `error`, `occurredAt`. При наличии секрета тело подписано заголовком `X-Remnadrop-Signature: sha256=<HMAC-SHA256>`. Сбой доставки не отменяет успешно созданную копию; ошибок доставки следует искать в журнале агента.
+Тело содержит стандартные `id`, `scope`, `event`, `timestamp`, `data`. В `data` находятся `targetId`, `runId`, `storageType`, `name`, `fileName`, `sizeBytes`, `sha256`, `error`, `occurredAt`. Доставка использует стандартную подпись панели и настройки событий. Ошибка доставки не отменяет созданную копию.
 
 ## Восстановление
 

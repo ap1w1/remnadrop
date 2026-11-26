@@ -11,7 +11,8 @@ import { NodeHistoryController } from './node-history.controller';
 import { NodeMetricAgentController } from './node-metric-agent.controller';
 import { NodeMetricAlertsService } from './node-metric-alerts.service';
 import { ForkWebhooksService } from './fork-webhooks.service';
+import { BackupWebhooksService } from './backup-webhooks.service';
 
 @Global()
-@Module({ imports: [NodesModule, CqrsModule], controllers: [MonitoringSettingsController, SquadQuotasController, GlobalNodeQuotasController, NodeHistoryController, NodeMetricAgentController], providers: [SquadQuotasService, QuotaMaintenanceService, QuotaWebhooksService, NodeHistoryService, NodeMetricAlertsService, ForkWebhooksService], exports: [SquadQuotasService, ForkWebhooksService] })
+@Module({ imports: [NodesModule, CqrsModule], controllers: [MonitoringSettingsController, SquadQuotasController, GlobalNodeQuotasController, NodeHistoryController, NodeMetricAgentController], providers: [SquadQuotasService, QuotaMaintenanceService, QuotaWebhooksService, BackupWebhooksService, NodeHistoryService, NodeMetricAlertsService, ForkWebhooksService], exports: [SquadQuotasService, ForkWebhooksService] })
 export class SquadQuotasModule {}

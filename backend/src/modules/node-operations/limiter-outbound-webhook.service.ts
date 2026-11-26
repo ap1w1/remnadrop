@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '@common/database/prisma.service';
-import { createHash, createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { ForkWebhooksService } from '@modules/squad-quotas/fork-webhooks.service';
 
 const allowedEvents = new Set([
     'violation_detected','soft_violation_detected','traffic_spike','traffic_heavy',
@@ -16,15 +17,10 @@ export class LimiterOutboundWebhookService implements OnModuleInit, OnModuleDest
     private readonly logger = new Logger(LimiterOutboundWebhookService.name);
     private timer?: ReturnType<typeof setInterval>;
     private busy = false;
-    constructor(private readonly db:PrismaService) {}
+    constructor(private readonly db:PrismaService, private readonly webhooks:ForkWebhooksService) {}
     private config() {
-        const enabled=process.env.WEBHOOK_ENABLED==='true';
-        const secret=process.env.WEBHOOK_SECRET_HEADER || '';
-        const urls=(process.env.WEBHOOK_URL || '').split(',').map(s=>s.trim()).filter(Boolean);
-        const valid=enabled&&secret.length>=32&&urls.length>0&&urls.every(value=>{
-            try {return ['http:','https:'].includes(new URL(value).protocol);} catch {return false;}
-        });
-        return {urls,secret,events:allowedEvents,valid};
+        const urls=this.webhooks.destinations();
+        return {urls,events:allowedEvents,valid:urls.length>0};
     }
     async status() {
         const cfg=this.config();
@@ -71,10 +67,7 @@ export class LimiterOutboundWebhookService implements OnModuleInit, OnModuleDest
                 try {
                     const url=destinations.get(item.destination_hash);
                     if(!url) throw new Error('Destination was changed: refusing to forward older event');
-                    const body=JSON.stringify({id:item.id,scope:'limiter',event:'limiter.'+item.event_type,timestamp:item.created_at,data:item.payload});
-                    const signature=createHmac('sha256',cfg.secret).update(body).digest('hex');
-                    const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-Remnawave-Signature':signature,'X-Remnawave-Timestamp':item.created_at.toISOString(),'User-Agent':'Remnawave'},body,redirect:'error',signal:AbortSignal.timeout(10000)});
-                    if(!response.ok)throw new Error('Webhook HTTP '+response.status);
+                    await this.webhooks.enqueue(item.id,('limiter.'+item.event_type) as Parameters<ForkWebhooksService['enqueue']>[1],item.created_at,item.payload,[url]);
                     await this.db.$executeRaw`UPDATE limiter_outbound_webhook_queue
                         SET delivered_at=now(),lease_until=NULL,last_error=NULL WHERE id=${item.id}::uuid`;
                 } catch (cause) {

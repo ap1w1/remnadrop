@@ -8,9 +8,7 @@ install -m 0700 "$SOURCE/agent.py" /opt/remnadrop-backups/agent.py
 if [[ ! -f /etc/remnadrop-backups/agent.env ]]; then
   install -m 0600 /dev/null /etc/remnadrop-backups/agent.env
   cat > /etc/remnadrop-backups/agent.env <<'ENV'
-# Add a public HTTPS endpoint to receive success/error notifications:
-# BACKUP_WEBHOOK_URL=https://hooks.example.org/remnadrop/backups
-# BACKUP_WEBHOOK_SECRET=replace-with-long-random-string
+# Outgoing backup webhooks use the panel's standard webhook settings.
 # RCLONE_CONFIG=/etc/remnadrop-backups/rclone.conf
 # BACKUP_LOCAL_DIR=/var/lib/remnadrop-backups/archives
 ENV

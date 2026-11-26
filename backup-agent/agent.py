@@ -7,7 +7,6 @@ Docker or rclone secrets. Intended to run as root with /etc/remnadrop-backups pr
 from __future__ import annotations
 import fcntl
 import hashlib
-import hmac
 import json
 import logging
 import os
@@ -16,16 +15,12 @@ import re
 import shutil
 import subprocess
 import tempfile
-from urllib.request import Request, urlopen
-from urllib.parse import urlsplit
 from datetime import datetime, timezone
 import uuid
 
 LOG = logging.getLogger('remnadrop-backups')
 BASE = Path(os.environ.get('BACKUP_LOCAL_DIR', '/var/lib/remnadrop-backups/archives')).resolve()
 RCLONE_CONFIG = os.environ.get('RCLONE_CONFIG', '/etc/remnadrop-backups/rclone.conf')
-WEBHOOK_URL = os.environ.get('BACKUP_WEBHOOK_URL', '')
-WEBHOOK_SECRET = os.environ.get('BACKUP_WEBHOOK_SECRET', '')
 PROVIDER_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$')
 PATH_RE = re.compile(r'^[a-zA-Z0-9_./-]{1,160}$')
 UUID_RE = re.compile(r'^[0-9a-f-]{36}$')
@@ -72,8 +67,8 @@ def claim_due() -> list[dict]:
         FROM due WHERE t.id=due.id
         RETURNING t.*
     ), runs AS (
-        INSERT INTO backup_runs(id,target_id,status,started_at)
-        SELECT gen_random_uuid(),id,'running',now() FROM claimed RETURNING id,target_id
+        INSERT INTO backup_runs(id,target_id,status,started_at,webhook_enabled)
+        SELECT gen_random_uuid(),id,'running',now(),webhook_enabled FROM claimed RETURNING id,target_id
     )
     SELECT COALESCE(json_agg(json_build_object(
         'id',c.id,'runId',r.id,'name',c.name,'provider',c.provider,
@@ -224,36 +219,11 @@ def upload(t: dict, src: Path, name: str):
             raise RuntimeError('Remote archive size verification failed')
 
 
-def notify(t: dict, status: str, name: str, size: int, sha: str, error: str):
-    if not t['webhookEnabled'] or not WEBHOOK_URL:
-        return
-    parsed = urlsplit(WEBHOOK_URL)
-    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
-        LOG.warning('Webhook skipped: HTTPS URL required')
-        return
-    event = {'event':'backup.' + status,'targetId':t['id'],'runId':t['runId'],
-             'storageType':t['provider'],'name':t['name'],'fileName':name,
-             'sizeBytes':str(size),'sha256':sha,'error':error,
-             'occurredAt':datetime.now(timezone.utc).isoformat()}
-    body = json.dumps(event, ensure_ascii=False, separators=(',', ':')).encode()
-    headers = {'Content-Type':'application/json','User-Agent':'RemnaDrop-Backup-Agent/1.0'}
-    if WEBHOOK_SECRET:
-        sig = hmac.new(WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
-        headers['X-Remnadrop-Signature'] = 'sha256=' + sig
-    try:
-        with urlopen(Request(WEBHOOK_URL, body, headers, method='POST'), timeout=10) as response:
-            if response.status >= 300:
-                raise RuntimeError(f'Webhook status {response.status}')
-    except Exception as exc:
-        LOG.warning('Webhook delivery error: %s', exc)
-
-
 def run_one(t: dict):
     name = ''
     size = 0
     sha = ''
     err = ''
-    status = 'failed'
     try:
         check_target(t)
         if t['provider'] == 'local':
@@ -291,17 +261,12 @@ def run_one(t: dict):
         used_update = f'last_usage_bytes={used},last_usage_at=now(),' if used is not None else ''
         db_sql(f"UPDATE backup_runs SET status='completed',file_name={sql_lit(name)},size_bytes={size},sha256={sql_lit(sha)},finished_at=now() WHERE id={sql_lit(t['runId'])}::uuid;"
                f"UPDATE backup_targets SET {used_update}last_status='completed' WHERE id={sql_lit(t['id'])}::uuid;")
-        status = 'completed'
         LOG.info('%s: backup completed, %s, %s bytes', t['name'], name, size)
     except Exception as exc:
         err = str(exc)[:1300]
         LOG.exception('Backup target failed: %s', t.get('name'))
         db_sql(f"UPDATE backup_runs SET status='failed', error={sql_lit(err)},finished_at=now() WHERE id={sql_lit(t['runId'])}::uuid;"
                f"UPDATE backup_targets SET last_status='failed' WHERE id={sql_lit(t['id'])}::uuid;")
-    finally:
-        notify(t, status, name, size, sha, err)
-
-
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     lock_dir = Path('/run/lock')

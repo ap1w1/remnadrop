@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
 import { UsersModule } from '@modules/users/users.module';
 import { SubscriptionTemplateModule } from '@modules/subscription-template/subscription-template.module';
+import { SquadQuotasModule } from '@modules/squad-quotas/squad-quotas.module';
 import { DpiCheckerService } from './dpi-checker.service';
 import { DpiCredentialsService } from './dpi-credentials.service';
 import { DpiCheckerController } from './dpi-checker.controller';
@@ -23,7 +24,7 @@ import { LimiterBridgeController, LimiterBridgeGuard } from './limiter-bridge.co
 import { LimiterWebhookController } from './limiter-webhook.controller';
 
 @Module({
-  imports:[CqrsModule,UsersModule,SubscriptionTemplateModule],
+  imports:[CqrsModule,UsersModule,SubscriptionTemplateModule,SquadQuotasModule],
   providers:[DpiCheckerService,DpiCredentialsService,NodeIpService,CloudflareDnsService,AutomationsService,LimiterBridgeSecretsService,LimiterService,LimiterOutboundWebhookService,LimiterCredentialsService,LimiterRunnerService,LimiterControlService,LimiterBridgeGuard],
   controllers:[DpiCheckerController,NodeIpController,AutomationsController,LimiterController,CloudflareDnsController,CloudflareDnsWebhookController,DiskMetricsController,LimiterBridgeController,LimiterWebhookController],
 })
