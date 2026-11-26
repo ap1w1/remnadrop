@@ -182,6 +182,36 @@ class DeploymentTests(unittest.TestCase):
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
         self.assert_failed_without_success(result)
 
+    @unittest.skipUnless(os.geteuid() == 0, "updater intentionally requires root")
+    def test_low_disk_blocks_before_build(self):
+        self.executable("df", "#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted\\nmock 20000000 0 10000000 0%% /\\n'\n")
+        result = subprocess.run(["bash", str(self.source / "upgrade-fork.sh")], env=self.env, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Not enough free disk space", result.stdout)
+        self.assertFalse(any(call["args"][0] == "build" for call in self.calls()))
+
+    @unittest.skipUnless(os.geteuid() == 0, "updater intentionally requires root")
+    def test_outer_updater_skips_export_when_old_image_exists(self):
+        result = subprocess.run(["bash", str(self.source / "upgrade-fork.sh")], env=self.env, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertFalse(any(call["args"][0] == "export" for call in self.calls()))
+        backups = list((self.install / "update-backups").glob("ops-*/rollback-source"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text().strip(), "existing-image")
+
+    @unittest.skipUnless(os.geteuid() == 0, "updater intentionally requires root")
+    def test_outer_updater_exports_when_old_image_missing(self):
+        self.change_state(scenario="old_image_unavailable")
+        result = subprocess.run(["bash", str(self.source / "upgrade-fork.sh")], env=self.env, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertTrue(any(call["args"][0] == "export" for call in self.calls()))
+        backups = list((self.install / "update-backups").glob("ops-*/rollback-source"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text().strip(), "container-export")
+
 
 if __name__ == "__main__":
     unittest.main()

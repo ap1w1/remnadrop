@@ -37,7 +37,7 @@ say "Target image: $IMAGE"
 # Prevent disk exhaustion while exporting the old image and testing DB restore.
 # This check does not free/remove any user data.
 FREE_KIB="$(df -Pk "$INSTALL_DIR" | awk 'NR==2 {print $4}')"
-MIN_FREE_GIB="${MIN_FREE_GIB:-4}"
+MIN_FREE_GIB="${MIN_FREE_GIB:-12}"
 [[ "$MIN_FREE_GIB" =~ ^[0-9]+$ ]] || fail 'MIN_FREE_GIB must be a whole number'
 if [[ -z "$FREE_KIB" ]] || (( FREE_KIB < MIN_FREE_GIB*1024*1024 )); then
   fail "Not enough free disk space: ${FREE_KIB:-unknown} KiB; minimum ${MIN_FREE_GIB} GiB. Move old backups elsewhere before upgrading."
@@ -90,11 +90,25 @@ test -s "$DB_BACKUP" || fail 'Database dump is empty'
 docker exec -i remnawave-db pg_restore --list < "$DB_BACKUP" > "$BACKUP_DIR/database-pre-upgrade.list" || fail 'Cannot read database dump'
 say 'Database dump verified structurally. The migration script also performs test restoration.'
 
-# The rollback export uses disk twice: once for rootfs.tar and once for the
-# docker-imported recovery image. Check AFTER Docker build and the pre-upgrade
-# DB dump, but BEFORE creating either artifact or stopping the panel.
-say 'Checking free space for export, recovery image and PostgreSQL restore...'
-ROOTFS_BYTES="$(docker inspect --size -f '{{.SizeRootFs}}' remnawave)"
+# Prefer the exact image used by the running container. The migration script
+# pins it under a rollback tag before replacing the container. Export/import
+# is needed only when that image is no longer inspectable by the Docker daemon.
+OLD_IMAGE_ID="$(docker inspect -f '{{.Image}}' remnawave)"
+RECOVERY_IMAGE=''
+ROOTFS_BYTES=0
+NEEDS_EXPORT=0
+if docker image inspect "$OLD_IMAGE_ID" >/dev/null 2>&1; then
+  say "Existing image $OLD_IMAGE_ID is available for rollback; skipping container export."
+  printf 'existing-image\n' > "$BACKUP_DIR/rollback-source"
+else
+  say 'Original image unavailable; preparing container export for rollback.'
+  NEEDS_EXPORT=1
+  ROOTFS_BYTES="$(docker inspect --size -f '{{.SizeRootFs}}' remnawave)"
+  printf 'container-export\n' > "$BACKUP_DIR/rollback-source"
+fi
+# Check AFTER Docker build and the first DB dump, but BEFORE any export or
+# service stop. A fallback export needs space for both tar and imported image.
+say 'Checking free space for rollback and PostgreSQL restore...'
 DB_BYTES="$(docker exec remnawave-db sh -ec 'psql -X -A -t -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT pg_database_size(current_database())"')"
 FREE_KIB="$(df -Pk "$INSTALL_DIR" | awk 'NR==2 {print $4}')"
 [[ "$ROOTFS_BYTES" =~ ^[0-9]+$ && "$DB_BYTES" =~ ^[0-9]+$ && "$FREE_KIB" =~ ^[0-9]+$ ]] || fail 'Unable to estimate free space; refusing rollback export.'
@@ -105,19 +119,22 @@ if (( FREE_KIB < REQUIRED_KIB )); then
   fail "Not enough free space after build: ${FREE_KIB} KiB; need >= ${REQUIRED_KIB} KiB for safe rollback export and PostgreSQL restore. The current panel remains online. Remove unused images or expand disk."
 fi
 say "Disk reserve OK: ${FREE_KIB} KiB free; estimated requirement ${REQUIRED_KIB} KiB"
-say 'Exporting current container for reliable rollback...'
-docker inspect remnawave > "$BACKUP_DIR/container.json"
-docker export remnawave -o "$BACKUP_DIR/rootfs.tar"
-[[ -s "$BACKUP_DIR/rootfs.tar" ]] || fail 'Failed to export current container'
-python3 "$SOURCE/recover-export.py" "$BACKUP_DIR"
-[[ -s "$BACKUP_DIR/rollback-image" ]] || fail 'Rollback image not created'
+if (( NEEDS_EXPORT == 1 )); then
+  say 'Exporting current container for reliable rollback...'
+  docker inspect remnawave > "$BACKUP_DIR/container.json"
+  docker export remnawave -o "$BACKUP_DIR/rootfs.tar"
+  [[ -s "$BACKUP_DIR/rootfs.tar" ]] || fail 'Failed to export current container'
+  python3 "$SOURCE/recover-export.py" "$BACKUP_DIR"
+  [[ -s "$BACKUP_DIR/rollback-image" ]] || fail 'Rollback image not created'
+  RECOVERY_IMAGE="$(cat "$BACKUP_DIR/rollback-image")"
+fi
 
 [[ "$(docker inspect -f '{{.Id}}' remnawave)" == "$CONTAINER_ID" ]] || fail 'Panel container changed after export'
 [[ "$(docker image inspect -f '{{.Id}}' "$IMAGE")" == "$TARGET_IMAGE_ID" ]] || fail 'Target image tag changed after build; refusing to switch'
 
 say 'Switching to the new image, with database backup, test restore, and migrations...'
 set +e
-PANEL_ROLLBACK_IMAGE="$(cat "$BACKUP_DIR/rollback-image")" \
+PANEL_ROLLBACK_IMAGE="$RECOVERY_IMAGE" \
   PANEL_TARGET_IMAGE_ID="$TARGET_IMAGE_ID" \
   bash "$SOURCE/migrate-2.8.1.sh" "$INSTALL_DIR" "$IMAGE" --update \
   2>&1 | tee "$BACKUP_DIR/migration.log"

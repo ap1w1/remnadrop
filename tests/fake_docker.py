@@ -63,6 +63,8 @@ def inspect_output(image=False):
 
 
 if args[:2] == ["image", "inspect"]:
+    if state["scenario"] == "old_image_unavailable" and args[-1] == state["container_image"]:
+        finish(status=1)
     finish(inspect_output(image=True))
 if args[:2] == ["image", "tag"]:
     finish()
@@ -91,6 +93,8 @@ if args[0] == "exec":
         finish("fake restore catalog" if "--list" in args else "")
     if "history.sql" in command:
         finish("[]")
+    if "check-panel-database.cjs" in command:
+        finish(status=0 if state["scenario"] != "db_health_failure" else 1)
     if "node" in args and "-p" in args:
         finish("2.8.1")
     if "fetch(" in command:
