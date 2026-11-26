@@ -388,7 +388,6 @@ export const BaseHostForm = <
                                             label={t('base-host-form.remark')}
                                             {...form.getInputProps('remark')}
                                             leftSection={<TemplateInfoPopoverShared
-                                                note="N_ — лимит ноды или общей группы нод хоста. NODE_ и LOCATION_ — старые названия тех же значений; они продолжают работать. TRAFFIC_ и TOTAL_TRAFFIC — данные всей подписки."
                                                 templateKeys={[...TEMPLATE_KEYS, 'N_NAME', 'N_USED', 'N_LEFT', 'N_LIMIT', 'N_PCT']}
                                             />}
                                             required={!removeRequiredFields}
