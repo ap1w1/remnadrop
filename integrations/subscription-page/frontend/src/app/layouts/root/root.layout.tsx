@@ -36,7 +36,13 @@ export function RootLayout() {
         '--mantine-color-dark-7': pageColors.surface,
         '--mantine-color-cyan-4': pageColors.accent,
         '--mantine-color-cyan-5': pageColors.accent,
+        '--mantine-color-cyan-6': pageColors.accent,
+        '--mantine-color-cyan-7': pageColors.accent,
         '--mantine-color-cyan-8': pageColors.accent,
+        '--mantine-color-cyan-filled': pageColors.accent,
+        '--mantine-color-cyan-outline': pageColors.accent,
+        '--mantine-color-cyan-light-color': pageColors.accent,
+        '--mantine-color-cyan-light': `color-mix(in srgb, ${pageColors.accent} 14%, transparent)`,
         '--mantine-color-white': pageColors.text,
         '--mantine-color-text': pageColors.text
     } as CSSProperties
@@ -49,8 +55,9 @@ export function RootLayout() {
 
             if (subscriptionUrl) {
                 try {
+                    const decoded = Uint8Array.from(atob(subscriptionUrl), (char) => char.charCodeAt(0))
                     const subscription: GetSubscriptionInfoByShortUuidCommand.Response = JSON.parse(
-                        atob(subscriptionUrl)
+                        new TextDecoder().decode(decoded)
                     )
 
                     subscriptionActions.setSubscriptionInfo({

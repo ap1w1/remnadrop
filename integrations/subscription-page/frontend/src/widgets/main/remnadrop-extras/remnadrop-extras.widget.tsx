@@ -27,7 +27,7 @@ const translations = {
 function formatBytes(raw: string): string {
     const value = Number(raw)
     if (!Number.isFinite(value)) return '—'
-    const units = ['Б', 'КиБ', 'ГиБ', 'ТиБ', 'ПиБ']
+    const units = ['Б', 'КиБ', 'МиБ', 'ГиБ', 'ТиБ', 'ПиБ']
     let scaled = Math.max(0, value)
     let index = 0
     while (scaled >= 1024 && index < units.length - 1) {

@@ -17,6 +17,7 @@ import { useAppConfig, useAppConfigStoreActions, useCurrentLang } from '@entitie
 import { LanguagePicker } from '@shared/ui/language-picker/language-picker.shared'
 import { Page, RemnawaveLogo } from '@shared/ui'
 import { RemnadropExtrasWidget } from '@widgets/main/remnadrop-extras/remnadrop-extras.widget'
+import { parsePageColors } from '@shared/utils/page-colors'
 
 interface IMainPageComponentProps {
     isMobile: boolean
@@ -43,6 +44,7 @@ export const MainPageComponent = ({ isMobile, platform }: IMainPageComponentProp
     const { setLanguage } = useAppConfigStoreActions()
 
     const brandName = config.brandingSettings.title
+    const accent = parsePageColors((config.brandingSettings as { pageColors?: unknown }).pageColors).accent
     let hasCustomLogo = !!config.brandingSettings.logoUrl
 
     if (hasCustomLogo) {
@@ -84,10 +86,10 @@ export const MainPageComponent = ({ isMobile, platform }: IMainPageComponentProp
                                     }}
                                 />
                             ) : (
-                                <RemnawaveLogo c="cyan" size={32} />
+                                <RemnawaveLogo c={accent} size={32} />
                             )}
                             <Title
-                                c={hasCustomLogo ? 'white' : 'cyan'}
+                                c={hasCustomLogo ? 'white' : accent}
                                 fw={700}
                                 order={4}
                                 size="lg"
