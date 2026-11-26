@@ -12,6 +12,7 @@ import { UsersQueuesService } from '@queue/_users/users-queues.service';
 import { QUEUES_NAMES } from '@queue/queue.enum';
 
 import { USERS_JOB_NAMES } from '../constants/users-job-name.constant';
+import type { IUserUsageDelta } from '../interfaces/user-usage.interface';
 
 @Processor(QUEUES_NAMES.USERS.UPDATE_USERS_USAGE, {
     concurrency: 5,
@@ -36,7 +37,7 @@ export class UpdateUsersUsageQueueProcessor extends WorkerHost {
         }
     }
 
-    private async handleUpdateUsersUsage(job: Job<{ u: string; b: string; n: string }[]>) {
+    private async handleUpdateUsersUsage(job: Job<IUserUsageDelta[]>) {
         try {
             const userUsageList = job.data;
 

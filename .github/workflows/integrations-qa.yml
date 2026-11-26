@@ -76,7 +76,7 @@ jobs:
           bash tests/integrations/database-smoke.sh remnadrop-integrations-qa
       - name: Panel inbox, login and SSL regression tests
         run: |
-          docker run --rm --network none --entrypoint sh remnadrop-integrations-qa -ec 'node --test scripts/panel-events.test.cjs scripts/reality-key.test.cjs scripts/node-quota-usage.test.cjs'
+          docker run --rm --network none --entrypoint sh remnadrop-integrations-qa -ec 'node --test scripts/panel-events.test.cjs scripts/reality-key.test.cjs scripts/node-quota-usage.test.cjs scripts/node-quota-accounting.test.cjs'
       - name: Agent unit tests
         run: |
           python3 -m unittest discover -s backup-agent -p 'test*.py' -v

@@ -32,6 +32,15 @@ function adapter(connection) {
     };
 }
 
+async function addWarningColumns(pg) {
+    await pg.exec(`
+        ALTER TABLE user_node_quota_preferences ADD COLUMN threshold_percents integer[] NOT NULL DEFAULT ARRAY[80];
+        ALTER TABLE user_node_quotas ADD COLUMN sent_threshold_percents integer[] NOT NULL DEFAULT '{}';
+        ALTER TABLE user_node_quota_groups ADD COLUMN sent_threshold_percents integer[] NOT NULL DEFAULT '{}';
+        ALTER TABLE node_quota_events ADD COLUMN threshold_percent integer;
+    `);
+}
+
 test('node quota counts usage in bytes and deduplicates a repeated job', async () => {
     const pg = new PGlite();
     try {
@@ -53,6 +62,7 @@ test('node quota counts usage in bytes and deduplicates a repeated job', async (
         `);
         await pg.query('INSERT INTO users(uuid,t_id) VALUES($1,123)', [userUuid]);
         await pg.query('INSERT INTO nodes(uuid,name) VALUES($1,$2)', [nodeUuid,'First node']);
+        await addWarningColumns(pg);
         const service = new SquadQuotasService(adapter(pg));
         const usage = [{ u:'123', b:'4424990', n:nodeUuid }];
         await service.record('usage-one', usage);
@@ -62,7 +72,7 @@ test('node quota counts usage in bytes and deduplicates a repeated job', async (
         await service.record('usage-one', usage);
         await service.record('usage-two', [{ u:'123', b:'1048576', n:nodeUuid }]);
         const rows = await pg.query('SELECT used_bytes,blocked FROM user_node_quotas WHERE user_uuid=$1 AND node_uuid=$2', [userUuid,nodeUuid]);
-        assert.equal(BigInt(rows.rows[0].used_bytes),5473566n);
+        assert.equal(BigInt(rows.rows[0].used_bytes),1048576n);
         assert.equal(rows.rows[0].blocked,false);
     } finally {
         await pg.close();
@@ -106,18 +116,19 @@ test('two nodes share usage, blocking, event snapshot and reset', async () => {
         `);
         await pg.query('INSERT INTO users(uuid,t_id) VALUES($1,123)',[userUuid]);
         await pg.query('INSERT INTO nodes(uuid,name) VALUES($1,$2),($3,$4),($5,$6)',[nodeUuid,'First node',secondNodeUuid,'Second node',thirdNodeUuid,'Third node']);
+        await addWarningColumns(pg);
         const service=new SquadQuotasService(adapter(pg));
         await service.record('before-group',[{u:'123',n:nodeUuid,b:'30'}]);
         const {id}=await service.configureGroup(userUuid,null,'Shared',[nodeUuid,secondNodeUuid],'100');
         const {id:otherId}=await service.configureGroup(userUuid,null,'Single',[thirdNodeUuid],'500');
         assert.equal((await service.listGroups(userUuid)).length,2);
         await assert.rejects(()=>service.configureGroup(userUuid,null,'Overlapping',[secondNodeUuid],'100'));
-        assert.equal((await service.listGroups(userUuid)).find(group=>group.id===id).used_bytes,'30');
+        assert.equal((await service.listGroups(userUuid)).find(group=>group.id===id).used_bytes,'0');
         await service.record('other-group',[{u:'123',n:thirdNodeUuid,b:'100'}]);
         assert.equal((await service.listGroups(userUuid)).find(group=>group.id===otherId).used_bytes,'100');
         await service.record('shared-first',[{u:'123',n:nodeUuid,b:'30'}]);
-        await service.record('shared-second',[{u:'123',n:secondNodeUuid,b:'40'}]);
-        await service.record('shared-second',[{u:'123',n:secondNodeUuid,b:'40'}]);
+        await service.record('shared-second',[{u:'123',n:secondNodeUuid,b:'70'}]);
+        await service.record('shared-second',[{u:'123',n:secondNodeUuid,b:'70'}]);
         const group=(await service.listGroups(userUuid)).find(group=>group.id===id);
         assert.equal(group.used_bytes,'100');
         assert.equal(group.blocked,true);

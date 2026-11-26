@@ -14,6 +14,7 @@ import { BulkAllUpdateUsersRequestDto, BulkUpdateUsersRequestDto } from '@module
 import { QUEUES_NAMES } from '@queue/queue.enum';
 
 import { USERS_JOB_NAMES } from './constants/users-job-name.constant';
+import type { IUserUsageDelta } from './interfaces/user-usage.interface';
 import {
     IAddUserSubscriptionRequestHistoryPayload,
     ICheckAndUpsertHwidDevicePayload,
@@ -292,7 +293,7 @@ export class UsersQueuesService implements OnApplicationBootstrap {
         );
     }
 
-    public async updateUserUsage(payload: { u: string; b: string; n: string }[]) {
+    public async updateUserUsage(payload: IUserUsageDelta[]) {
         const chunks = this.chunks(payload, 1500);
         for await (const chunk of chunks) {
             await this.updateUsersUsageQueue.add(USERS_JOB_NAMES.UPDATE_USERS_USAGE, chunk, {

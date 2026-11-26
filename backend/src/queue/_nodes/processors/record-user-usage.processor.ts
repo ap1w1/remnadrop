@@ -20,6 +20,7 @@ import {
 } from '@libs/contracts/constants';
 
 import { UsersQueuesService } from '@queue/_users';
+import type { IUserUsageDelta } from '@queue/_users/interfaces/user-usage.interface';
 import { PushFromRedisQueueService } from '@queue/push-from-redis/push-from-redis.service';
 import { QUEUES_NAMES } from '@queue/queue.enum';
 
@@ -112,11 +113,12 @@ export class RecordUserUsageQueueProcessor extends WorkerHost {
                 return;
             }
 
-            const userUsageList: { u: string; b: string; n: string }[] = Array.from({
+            const userUsageList: IUserUsageDelta[] = Array.from({
                 length: response.response.users.length,
             });
 
             let userUsageIndex = 0;
+            let onlineUsers = 0;
 
             const nodeRedisKey = INTERNAL_CACHE_KEYS.NODE_USER_USAGE(nodeId);
 
@@ -131,30 +133,36 @@ export class RecordUserUsageQueueProcessor extends WorkerHost {
 
                 const totalBytes = user.downlink + user.uplink;
 
-                if (totalBytes < this.ignoreBelowBytes) {
+                if (totalBytes <= 0) {
                     return;
                 }
+
+                const skipGlobal = totalBytes < this.ignoreBelowBytes;
+                if (!skipGlobal) onlineUsers++;
 
                 pipeline.hincrby(nodeRedisKey, user.username, totalBytes);
 
                 userUsageList[userUsageIndex++] = {
                     u: user.username,
-                    b: multiplyConsumption(consumptionMultiplier, totalBytes).toString(),
+                    b: skipGlobal ? '0' : multiplyConsumption(consumptionMultiplier, totalBytes).toString(),
+                    rawBytes: totalBytes.toString(),
+                    skipGlobal,
                     n: nodeUuid,
                 };
             });
 
             pipeline.expire(nodeRedisKey, INTERNAL_CACHE_KEYS_TTL.NODE_USER_USAGE);
 
+            // Persist the quota/global accounting job before updating display caches.
+            await this.usersQueuesService.updateUserUsage(userUsageList.slice(0, userUsageIndex));
+
             await pipeline.exec();
 
             await this.rawCacheService.set(
                 CACHE_KEYS.NODE_USERS_ONLINE(nodeUuid),
-                userUsageIndex,
+                onlineUsers,
                 CACHE_KEYS_TTL.NODE_USERS_ONLINE,
             );
-
-            await this.usersQueuesService.updateUserUsage(userUsageList.slice(0, userUsageIndex));
 
             await this.pushFromRedisQueueService.recordUserUsageDelayed({
                 redisKey: nodeRedisKey,

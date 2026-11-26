@@ -3,6 +3,7 @@ import { PrismaService } from '@common/database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prettyBytesUtil } from '@common/utils/bytes';
 import { BulkUpdateUserUsedTrafficBuilder } from '@modules/users/builders/bulk-update-user-used-traffic';
+import type { IUserUsageDelta } from '@queue/_users/interfaces/user-usage.interface';
 
 type Quota = { user_uuid: string; node_uuid: string; group_uuid: string | null; limit_bytes: bigint | null; used_bytes: bigint; blocked: boolean; period_days: number | null; reset_at: Date | null; threshold_percent:number; sent_threshold_percents:number[] };
 type GroupQuota = { id:string; user_uuid:string; name:string; limit_bytes:bigint; used_bytes:bigint; blocked:boolean; threshold_percent:number; threshold_sent:boolean; sent_threshold_percents:number[]; period_days:number|null; reset_at:Date|null; node_uuids:string[] };
@@ -331,7 +332,7 @@ export class SquadQuotasService {
             if(grouped.length)throw new BadRequestException('Reset the shared quota group instead');
             const changed = await tx.$executeRaw`UPDATE user_node_quotas SET used_bytes=0,threshold_sent=false,sent_threshold_percents='{}'::int[],reset_at=CASE WHEN period_days IS NULL THEN NULL ELSE now()+period_days*interval '1 day' END,updated_at=now() WHERE user_uuid=${userUuid}::uuid AND node_uuid=${nodeUuid}::uuid`;
             if (!changed) throw new NotFoundException('Quota not found');
-            await this.reconcile(tx, userUuid, nodeUuid, user.tId);
+            await this.reconcile(tx, userUuid, nodeUuid);
             await tx.$executeRaw`INSERT INTO node_quota_events(user_uuid,node_uuid,event,used_bytes,limit_bytes) SELECT user_uuid,node_uuid,'LOCATION_TRAFFIC_RESET',used_bytes,limit_bytes FROM user_node_quotas WHERE user_uuid=${userUuid}::uuid AND node_uuid=${nodeUuid}::uuid`;
             return { success: true };
         });
@@ -362,29 +363,60 @@ export class SquadQuotasService {
         });
     }
 
-    async record(eventId: string, usage: { u: string; b: string; n: string }[], includeGlobal = false) {
+    async record(eventId: string, usage: IUserUsageDelta[], includeGlobal = false) {
+        const nodes = new Map<string, { u:string; n:string; bytes:bigint }>();
+        const totals = new Map<string, { u:string; b:string; n:string }>();
+        for (const row of usage) {
+            const u = BigInt(row.u).toString();
+            const billed = BigInt(row.b);
+            // Jobs queued before this change contain only b. Do not guess their multiplier.
+            const bytes = BigInt(row.rawBytes ?? row.b);
+            if (billed < 0n || bytes < 0n) throw new Error('Negative usage');
+            if (!uuidPattern.test(row.n)) throw new Error('Invalid usage node');
+            const n = row.n.toLowerCase();
+            const key = `${u}:${n}`;
+            nodes.set(key, {u,n,bytes:(nodes.get(key)?.bytes ?? 0n)+bytes});
+            if (!row.skipGlobal) totals.set(u,{u,n,b:(BigInt(totals.get(u)?.b ?? '0')+billed).toString()});
+        }
         return this.db.$transaction(async tx => {
             const inserted = await tx.$executeRaw`INSERT INTO quota_usage_receipts(event_id) VALUES (${eventId}) ON CONFLICT DO NOTHING`;
             if (!inserted) return [] as { tId: bigint }[];
-            // Stable lock order for batches arriving concurrently from different nodes.
-            for (const row of [...usage].sort((a,b) => BigInt(a.u) < BigInt(b.u) ? -1 : BigInt(a.u) > BigInt(b.u) ? 1 : 0)) {
-                if (BigInt(row.b) < 0n) throw new Error('Negative usage');
-                const user = await tx.users.findUnique({ where: { tId: BigInt(row.u) } });
-                if (!user) continue;
-                await tx.$executeRaw`SELECT pg_advisory_xact_lock(${user.tId})`;
-                await tx.$executeRaw`INSERT INTO user_node_quotas(user_uuid,node_uuid) SELECT ${user.uuid}::uuid,uuid FROM nodes WHERE uuid=${row.n}::uuid ON CONFLICT DO NOTHING`;
-                const quotas=await tx.$queryRaw<Quota[]>`SELECT * FROM user_node_quotas WHERE user_uuid=${user.uuid}::uuid AND node_uuid=${row.n}::uuid`;
-                for (const q of quotas) {
-                    await tx.$executeRaw`UPDATE user_node_quotas SET used_bytes=used_bytes+${BigInt(row.b)},updated_at=now() WHERE user_uuid=${user.uuid}::uuid AND node_uuid=${q.node_uuid}::uuid`;
-                    if(q.group_uuid){
-                        await tx.$executeRaw`UPDATE user_node_quota_groups SET used_bytes=used_bytes+${BigInt(row.b)},updated_at=now() WHERE id=${q.group_uuid}::uuid`;
-                        await this.reconcileGroup(tx,q.group_uuid,user.uuid,q.node_uuid);
-                    }else await this.reconcile(tx, user.uuid, q.node_uuid, user.tId);
-                }
+            if (!nodes.size) return [] as { tId: bigint }[];
+            const values = Prisma.join([...nodes.values()].map(row => Prisma.sql`(${row.u}::bigint,${row.n}::uuid,${row.bytes}::bigint)`));
+            const userIds = [...new Set([...nodes.values()].map(row => row.u))];
+            // Same locks as quota edits/resets; acquire them in order across concurrent nodes.
+            await tx.$executeRaw(Prisma.sql`
+                SELECT pg_advisory_xact_lock(locked.t_id) FROM (
+                    SELECT t_id FROM users WHERE t_id IN (${Prisma.join(userIds.map(id => Prisma.sql`${id}::bigint`))}) ORDER BY t_id
+                ) locked`);
+            // One upsert for the whole batch instead of thousands of per-user round trips.
+            const quotas = await tx.$queryRaw<Quota[]>(Prisma.sql`
+                WITH data(t_id,node_uuid,bytes) AS (VALUES ${values})
+                INSERT INTO user_node_quotas(user_uuid,node_uuid,used_bytes)
+                SELECT u.uuid,n.uuid,d.bytes FROM data d JOIN users u ON u.t_id=d.t_id JOIN nodes n ON n.uuid=d.node_uuid
+                WHERE d.bytes>0
+                ON CONFLICT(user_uuid,node_uuid) DO UPDATE SET used_bytes=user_node_quotas.used_bytes+EXCLUDED.used_bytes,updated_at=now()
+                RETURNING *`);
+            const touchedGroups = new Map(quotas.filter(q => q.group_uuid).map(q => [q.group_uuid!,q.node_uuid]));
+            const groups = touchedGroups.size ? await tx.$queryRaw<GroupQuota[]>(Prisma.sql`
+                WITH data(t_id,node_uuid,bytes) AS (VALUES ${values}), increments AS (
+                    SELECT q.group_uuid,sum(d.bytes)::bigint AS bytes FROM data d JOIN users u ON u.t_id=d.t_id
+                    JOIN user_node_quotas q ON q.user_uuid=u.uuid AND q.node_uuid=d.node_uuid
+                    WHERE q.group_uuid IS NOT NULL AND d.bytes>0 GROUP BY q.group_uuid
+                )
+                UPDATE user_node_quota_groups g SET used_bytes=g.used_bytes+i.bytes,updated_at=now()
+                FROM increments i WHERE g.id=i.group_uuid RETURNING g.*`) : [];
+            const singles = quotas.filter(q => !q.group_uuid && (q.limit_bytes !== null || q.blocked));
+            if (groups.length || singles.length) {
+                const owners = [...new Set([...groups,...singles].map(q => q.user_uuid))];
+                const preferences = await tx.$queryRaw<{user_uuid:string;threshold_percents:number[]}[]>(Prisma.sql`
+                    SELECT user_uuid,threshold_percents FROM user_node_quota_preferences
+                    WHERE user_uuid IN (${Prisma.join(owners.map(id => Prisma.sql`${id}::uuid`))})`);
+                const levels = new Map(preferences.map(p => [p.user_uuid,p.threshold_percents]));
+                for (const group of groups) await this.applyGroupState(tx,group,touchedGroups.get(group.id)!,levels.get(group.user_uuid),false);
+                for (const quota of singles) await this.applyQuotaState(tx,quota,levels.get(quota.user_uuid));
             }
-            if (includeGlobal && usage.length) {
-                const totals=new Map<string,{u:string;b:string;n:string}>();
-                for (const row of usage) totals.set(row.u,{...row,b:(BigInt(totals.get(row.u)?.b ?? '0')+BigInt(row.b)).toString()});
+            if (includeGlobal && totals.size) {
                 const {query} = new BulkUpdateUserUsedTrafficBuilder([...totals.values()]);
                 return tx.$queryRaw<{tId:bigint}[]>(query);
             }
@@ -415,31 +447,43 @@ export class SquadQuotasService {
         const group=rows[0];
         if(!group)throw new NotFoundException('Group not found');
         const levels=await this.warningLevels(tx,userUuid,group.threshold_percent);
+        await this.applyGroupState(tx,group,nodeUuid,levels);
+    }
+
+    private async applyGroupState(tx:Prisma.TransactionClient,group:GroupQuota,nodeUuid:string,warningLevels?:number[],syncMembers=true) {
+        const groupUuid=group.id,userUuid=group.user_uuid;
+        const levels=warningLevels?.length?warningLevels:[group.threshold_percent];
         const crossed=levels.filter(level=>!group.sent_threshold_percents.includes(level)&&group.limit_bytes>0n&&group.used_bytes*100n>=group.limit_bytes*BigInt(level));
         if(crossed.length){
             await tx.$executeRaw`UPDATE user_node_quota_groups SET sent_threshold_percents=sent_threshold_percents||${crossed}::int[],threshold_sent=true WHERE id=${groupUuid}::uuid`;
             for(const level of crossed)await this.emitGroupEvent(tx,groupUuid,nodeUuid,'LOCATION_TRAFFIC_THRESHOLD',level);
         }
         const blocked=group.used_bytes>=group.limit_bytes;
-        await tx.$executeRaw`UPDATE user_node_quota_groups SET blocked=${blocked},updated_at=now() WHERE id=${groupUuid}::uuid`;
-        await tx.$executeRaw`UPDATE user_node_quotas SET blocked=${blocked},updated_at=now() WHERE group_uuid=${groupUuid}::uuid`;
+        if(blocked!==group.blocked)await tx.$executeRaw`UPDATE user_node_quota_groups SET blocked=${blocked},updated_at=now() WHERE id=${groupUuid}::uuid`;
+        // Also synchronize newly added members when an already-blocked group is edited.
+        if(syncMembers||blocked!==group.blocked)await tx.$executeRaw`UPDATE user_node_quotas SET blocked=${blocked},updated_at=now() WHERE group_uuid=${groupUuid}::uuid`;
         if(blocked!==group.blocked){
             await this.queueSync(tx,userUuid);
             if(blocked)await this.emitGroupEvent(tx,groupUuid,nodeUuid,'LOCATION_TRAFFIC_EXHAUSTED');
         }
     }
 
-    private async reconcile(tx: Prisma.TransactionClient, userUuid: string, nodeUuid: string, userId: bigint) {
+    private async reconcile(tx: Prisma.TransactionClient, userUuid: string, nodeUuid: string) {
         const rows: Quota[] = await tx.$queryRaw`SELECT * FROM user_node_quotas WHERE user_uuid=${userUuid}::uuid AND node_uuid=${nodeUuid}::uuid FOR UPDATE`;
         const q = rows[0];
         const levels=await this.warningLevels(tx,userUuid,q.threshold_percent);
+        await this.applyQuotaState(tx,q,levels);
+    }
+
+    private async applyQuotaState(tx:Prisma.TransactionClient,q:Quota,warningLevels?:number[]) {
+        const userUuid=q.user_uuid,nodeUuid=q.node_uuid;
+        const levels=warningLevels?.length?warningLevels:[q.threshold_percent];
         const crossed=levels.filter(level=>!q.sent_threshold_percents.includes(level)&&q.limit_bytes!==null&&q.limit_bytes>0n&&q.used_bytes*100n>=q.limit_bytes*BigInt(level));
         if(crossed.length){
             await tx.$executeRaw`UPDATE user_node_quotas SET sent_threshold_percents=sent_threshold_percents||${crossed}::int[],threshold_sent=true WHERE user_uuid=${userUuid}::uuid AND node_uuid=${nodeUuid}::uuid`;
             for(const level of crossed)await tx.$executeRaw`INSERT INTO node_quota_events(user_uuid,node_uuid,event,used_bytes,limit_bytes,threshold_percent) VALUES (${userUuid}::uuid,${nodeUuid}::uuid,'LOCATION_TRAFFIC_THRESHOLD',${q.used_bytes},${q.limit_bytes},${level})`;
         }
         const blocked = q.limit_bytes !== null && q.used_bytes >= q.limit_bytes;
-        await tx.$executeRaw`UPDATE user_node_quotas SET blocked=${blocked} WHERE user_uuid=${userUuid}::uuid AND node_uuid=${nodeUuid}::uuid`;
         if (blocked !== q.blocked) {
             await tx.$executeRaw`UPDATE user_node_quotas SET blocked=${blocked} WHERE user_uuid=${userUuid}::uuid AND node_uuid=${nodeUuid}::uuid`;
             await tx.$executeRaw`INSERT INTO quota_sync(user_uuid) VALUES (${userUuid}::uuid) ON CONFLICT(user_uuid) DO UPDATE SET revision=quota_sync.revision+1,updated_at=now()`;
