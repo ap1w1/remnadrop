@@ -16,6 +16,13 @@ export class SubscriptionRawResponse {
         username: string;
         userStatus: TUsersStatus;
         trafficLimitStrategy: TResetPeriods;
+        nodeQuotaGroups?: {
+            name: string;
+            usedBytes: string;
+            limitBytes: string;
+            blocked: boolean;
+            nodes: { name: string; countryCode: string }[];
+        }[];
     };
     public links: string[];
     public ssConfLinks: Record<string, string>;

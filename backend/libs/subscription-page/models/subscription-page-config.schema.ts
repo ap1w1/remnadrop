@@ -96,6 +96,17 @@ const BrandingSettingsSchema = z.object({
     telegramBot: LinkTemplateSchema.default(''),
     webPage: LinkTemplateSchema.default(''),
     webPageStub: LinkTemplateSchema.default(''),
+    pageColors: z.object({
+        background: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Expected #RRGGBB color'),
+        surface: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Expected #RRGGBB color'),
+        accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Expected #RRGGBB color'),
+        text: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Expected #RRGGBB color'),
+    }).default({
+        background: '#0D1117',
+        surface: '#161B22',
+        accent: '#22C7D9',
+        text: '#E6EDF3',
+    }),
 });
 
 const UiConfigSchema = z.object({

@@ -9,6 +9,12 @@ export const DEFAULT_SUBPAGE_CONFIG = {
         telegramBot: '',
         webPage: '',
         webPageStub: '',
+        pageColors: {
+            background: '#0D1117',
+            surface: '#161B22',
+            accent: '#22C7D9',
+            text: '#E6EDF3',
+        },
     },
     uiConfig: {
         subscriptionInfoBlockType: 'expanded',

@@ -501,7 +501,7 @@ export class SubscriptionService {
                 xrayLinks = this.xrayGeneratorService.generateLinks(formattedHosts, false);
             }
 
-            return ok(await this.getUserInfo(userEntity, xrayLinks, ssConfLinks));
+            return ok(await this.getUserInfo(userEntity, xrayLinks, ssConfLinks, params.includeNodeQuotaGroups));
         } catch (error) {
             this.logger.error(`Error getting subscription info: ${error}`);
             return fail(ERRORS.INTERNAL_SERVER_ERROR);
@@ -512,7 +512,13 @@ export class SubscriptionService {
         user: UserEntity,
         links: string[],
         ssConfLinks: Record<string, string>,
+        includeNodeQuotaGroups = false,
     ): Promise<SubscriptionRawResponse> {
+        const quotaGroups = includeNodeQuotaGroups ? await this.prisma.userNodeQuotaGroup.findMany({
+            where: { userUuid: user.uuid },
+            include: { nodes: { include: { node: { select: { name: true, countryCode: true } } } } },
+            orderBy: { name: 'asc' },
+        }) : null;
         return new SubscriptionRawResponse({
             isFound: true,
             user: {
@@ -529,6 +535,16 @@ export class SubscriptionService {
                 isActive: user.status === USERS_STATUS.ACTIVE,
                 userStatus: user.status,
                 trafficLimitStrategy: user.trafficLimitStrategy,
+                nodeQuotaGroups: quotaGroups?.map(group => ({
+                    name: group.name,
+                    usedBytes: group.usedBytes.toString(),
+                    limitBytes: group.limitBytes.toString(),
+                    blocked: group.blocked,
+                    nodes: group.nodes.map(item => ({
+                        name: item.node.name,
+                        countryCode: item.node.countryCode,
+                    })),
+                })),
             },
             links,
             ssConfLinks,

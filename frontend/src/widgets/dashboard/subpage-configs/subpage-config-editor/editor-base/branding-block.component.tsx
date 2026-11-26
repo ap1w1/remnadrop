@@ -1,4 +1,4 @@
-import { ActionIcon, Card, CopyButton, Divider, Group, Popover, Stack, Text, TextInput, Tooltip } from '@mantine/core'
+import { ActionIcon, Card, ColorInput, CopyButton, Divider, Group, Popover, SimpleGrid, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 import { UseFormReturnType } from '@mantine/form'
 import { TSubscriptionPageRawConfig } from '@remnawave/subscription-page-types'
 import { IconInfoCircle, IconPalette } from '@tabler/icons-react'
@@ -47,6 +47,29 @@ export function BrandingBlockComponent({ form }: IProps) {
                     required
                     {...form.getInputProps('brandingSettings.logoUrl')}
                 />
+
+                <Stack gap="xs">
+                    <Text fw={600} size="sm">Цвета страницы</Text>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                        {([
+                            ['background', 'Фон страницы', '#0D1117'],
+                            ['surface', 'Карточки', '#161B22'],
+                            ['accent', 'Акцент и кнопки', '#22C7D9'],
+                            ['text', 'Основной текст', '#E6EDF3']
+                        ] as const).map(([colorKey, label, fallback]) => (
+                            <ColorInput
+                                key={form.key(`brandingSettings.pageColors.${colorKey}`)}
+                                label={label}
+                                format="hex"
+                                swatches={['#22C7D9', '#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#0D1117', '#161B22', '#E6EDF3']}
+                                {...form.getInputProps(`brandingSettings.pageColors.${colorKey}`)}
+                                defaultValue={form.getValues().brandingSettings &&
+                                    (form.getValues().brandingSettings as typeof form.values.brandingSettings & { pageColors?: Record<string, string> }).pageColors?.[colorKey] || fallback}
+                            />
+                        ))}
+                    </SimpleGrid>
+                    <Text size="xs" c="dimmed">Цвета применяются к странице подписки после сохранения конфигурации.</Text>
+                </Stack>
 
                 <Group gap="xs" align="center" justify="space-between">
                     <Text fw={600} size="sm">Ссылки и UTM-переменные</Text>

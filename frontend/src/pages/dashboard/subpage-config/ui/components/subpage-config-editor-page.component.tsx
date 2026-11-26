@@ -71,7 +71,21 @@ export const SubpageConfigEditorPageComponent = (props: Props) => {
     const resetRef = useRef<() => void>(null)
     const form = useForm<TSubscriptionPageRawConfig>({
         mode: 'uncontrolled',
-        initialValues: config.config as TSubscriptionPageRawConfig,
+        initialValues: {
+            ...(config.config as TSubscriptionPageRawConfig),
+            brandingSettings: {
+                ...(config.config as TSubscriptionPageRawConfig).brandingSettings,
+                pageColors: {
+                    background: '#0D1117',
+                    surface: '#161B22',
+                    accent: '#22C7D9',
+                    text: '#E6EDF3',
+                    ...((config.config as TSubscriptionPageRawConfig).brandingSettings as {
+                        pageColors?: Record<string, string>
+                    }).pageColors
+                }
+            }
+        } as TSubscriptionPageRawConfig,
         validate: zodResolver(SubscriptionPageRawConfigSchema)
     })
 
@@ -201,6 +215,13 @@ export const SubpageConfigEditorPageComponent = (props: Props) => {
                 }))
                 showValidationErrorsModal(errors)
                 return
+            }
+
+            const importedColors = (configData as { brandingSettings?: { pageColors?: Record<string, unknown> } })
+                .brandingSettings?.pageColors
+            if (importedColors && (['background', 'surface', 'accent', 'text'] as const)
+                .every((key) => typeof importedColors[key] === 'string' && /^#[0-9a-fA-F]{6}$/.test(importedColors[key]))) {
+                Object.assign(validatedConfig.data.brandingSettings, { pageColors: importedColors })
             }
 
             await sleep(100)

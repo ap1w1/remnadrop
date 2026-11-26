@@ -86,6 +86,7 @@ export class SubscriptionController {
                 uniqueFieldKey: 'shortUuid',
             },
             authenticated: false,
+            includeNodeQuotaGroups: true,
         });
 
         const data = errorHandler(result);
