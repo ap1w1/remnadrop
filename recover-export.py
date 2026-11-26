@@ -30,7 +30,7 @@ for env in config.get('Env') or []:
     key, value = env.split('=', 1)
     args += ['--change', 'ENV ' + key + '=' + json.dumps(value)]
 args += ['--change', 'LABEL recovery.container=' + saved['Id']]
-tag = 'panel-fork:recovered-' + saved['Id'][:12]
+tag = 'remnadrop:recovered-' + saved['Id'][:12]
 print('Importing rollback image; existing panel stays running...', flush=True)
 # Do not print the command arguments: environment values can contain secrets.
 result = subprocess.run(args + [str(archive), tag], capture_output=True, text=True)

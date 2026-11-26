@@ -2,7 +2,7 @@
 # Run from the fork source directory. Existing installation is never reset.
 set -Eeuo pipefail
 INSTALL_DIR=${1:-/opt/remnawave}
-IMAGE=${2:-panel-fork:2.8.1-test}
+IMAGE=${2:-remnadrop:2.8.1-test}
 MODE=${3:-baseline}
 [[ "$MODE" == baseline || "$MODE" == --update ]] || { echo 'Third argument must be --update or omitted'; exit 1; }
 SOURCE=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -38,7 +38,7 @@ dc config --format json > "$BACKUP/compose.resolved.json"
 # Preserve env/config and old image reference without printing secrets.
 [[ ! -f "$INSTALL_DIR/.env" ]] || cp "$INSTALL_DIR/.env" "$BACKUP/env"
 printf '%s\n' "$BASE" > "$BACKUP/compose-files"
-ROLLBACK_IMAGE="panel-fork:rollback-$STAMP"
+ROLLBACK_IMAGE="remnadrop:rollback-$STAMP"
 if [[ -n "${PANEL_ROLLBACK_IMAGE:-}" ]]; then
   RECOVERED_CONTAINER=$(docker image inspect -f '{{ index .Config.Labels "recovery.container" }}' "$PANEL_ROLLBACK_IMAGE")
   [[ "$RECOVERED_CONTAINER" == "$(docker inspect -f '{{.Id}}' remnawave)" ]] || { echo 'Recovery image belongs to a different container'; exit 1; }

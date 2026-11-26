@@ -10,5 +10,5 @@ command -v flock >/dev/null
 docker compose version >/dev/null
 docker info >/dev/null
 cd "$SOURCE"
-docker build --progress=plain -f Dockerfile.dev -t panel-fork:2.8.1-test .
-bash "$SOURCE/migrate-2.8.1.sh" "$INSTALL_DIR" panel-fork:2.8.1-test "$MODE"
+docker build --progress=plain -f Dockerfile.dev -t remnadrop:2.8.1-test .
+bash "$SOURCE/migrate-2.8.1.sh" "$INSTALL_DIR" remnadrop:2.8.1-test "$MODE"

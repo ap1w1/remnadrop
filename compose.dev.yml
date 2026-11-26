@@ -1,6 +1,6 @@
 name: panel-dev
 x-app: &app
-  image: panel-fork:dev
+  image: remnadrop:dev
   build:
     context: .
     dockerfile: Dockerfile.dev

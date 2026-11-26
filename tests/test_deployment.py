@@ -16,7 +16,7 @@ import unittest
 
 
 REPO = Path(__file__).resolve().parents[1]
-TAG = "panel-fork:2.8.1-git-d2cabd67e257"
+TAG = "remnadrop:2.8.1-git-d2cabd67e257"
 TARGET = "sha256:" + "d" * 64
 OLD = "sha256:" + "a" * 64
 
@@ -38,7 +38,7 @@ class DeploymentTests(unittest.TestCase):
         (self.source / "Dockerfile.dev").write_text("FROM scratch\n")
         (self.source / "recover-export.py").write_text(
             "import pathlib, sys\n"
-            "pathlib.Path(sys.argv[1], 'rollback-image').write_text('panel-fork:test-recovery\\n')\n"
+            "pathlib.Path(sys.argv[1], 'rollback-image').write_text('remnadrop:test-recovery\\n')\n"
         )
         self.bin = self.root / "bin"
         self.bin.mkdir()

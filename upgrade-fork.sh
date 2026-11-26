@@ -5,7 +5,7 @@ set -Eeuo pipefail
 
 SOURCE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-/opt/remnawave}"
-IMAGE="${IMAGE:-panel-fork:2.8.1-ops-$(date -u +%Y%m%d%H%M%S)}"
+IMAGE="${IMAGE:-remnadrop:2.8.1-ops-$(date -u +%Y%m%d%H%M%S)}"
 DRY_RUN="${DRY_RUN:-0}"
 
 say() { printf '\n[RemnaDrop] %s\n' "$*"; }

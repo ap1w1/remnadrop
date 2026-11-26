@@ -69,17 +69,17 @@ export function BrandingBlockComponent({ form }: IProps) {
                     </Popover>
                 </Group>
                 {([
-                    ['supportUrl','support-url','https://t.me/support?start={{ID}}'],
-                    ['telegramChannel','telegram-channel','https://t.me/channel?utm_content={{USERNAME}}'],
-                    ['telegramBot','telegram-bot','https://t.me/bot?start={{ID}}'],
-                    ['webPage','web-page','https://example.com/?utm_source={{EMAIL}}'],
-                    ['webPageStub','web-page-stub','https://example.com/info?ref={{TELEGRAM_ID}}']
+                    ['supportUrl','Поддержка','https://t.me/support?start={{ID}}'],
+                    ['telegramChannel','Telegram-канал','https://t.me/channel?utm_content={{USERNAME}}'],
+                    ['telegramBot','Telegram-бот','https://t.me/bot?start={{ID}}'],
+                    ['webPage','Сайт','https://example.com/?utm_source={{EMAIL}}'],
+                    ['webPageStub','Продление подписки','https://example.com/renew?user={{ID}}']
                 ] as const).map(([key,label,placeholder])=><TextInput
                     key={form.key(`brandingSettings.${key}`)}
                     classNames={{input:styles.inputDark}}
                     label={label}
                     placeholder={placeholder}
-                    description={key==='supportUrl'?'Если пусто — используется ссылка поддержки из общих настроек Remnawave':'Необязательно; пустое значение скрывает ссылку'}
+                    description={key==='supportUrl'?'Если пусто — используется ссылка поддержки из общих настроек Remnawave':key==='webPageStub'?'Адрес кнопки «Продлить подписку» на странице пользователя':'Необязательно; пустое значение скрывает ссылку'}
                     {...form.getInputProps(`brandingSettings.${key}`)}
                 />)}
             </Stack>

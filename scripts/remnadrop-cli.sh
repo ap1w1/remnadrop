@@ -119,7 +119,7 @@ HELP
       exit 0
     fi
 
-    IMAGE="panel-fork:2.8.1-git-$SHORTSHA"
+    IMAGE="remnadrop:2.8.1-git-$SHORTSHA"
     say "Applying update using $IMAGE"
     INSTALL_DIR="$INSTALL_DIR" IMAGE="$IMAGE" bash "$RELEASE/upgrade-fork.sh"
     # Do not report success for an old healthy container with the same tag.
